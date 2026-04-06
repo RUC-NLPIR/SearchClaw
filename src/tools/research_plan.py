@@ -88,7 +88,7 @@ class ResearchPlanTool(Tool):
 
     is_concurrency_safe = False   # Mutates LoopState — must be sequential
     is_read_only = False
-    max_result_size_chars = 10_000
+    max_result_size_chars = 10000
 
     def prompt(self) -> str:
         return """Use this tool to create a structured research plan before starting your search. Breaking complex questions into sub-tasks ensures comprehensive coverage and prevents forgetting sub-topics.

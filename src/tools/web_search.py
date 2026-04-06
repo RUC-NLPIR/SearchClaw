@@ -50,7 +50,7 @@ class WebSearchTool(Tool):
         self,
         default_results: int = 10,
         max_results: int = 20,
-        max_result_size_chars: int = 15_000,
+        max_result_size_chars: int = 15000,
         http_timeout: int = 30,
     ):
         self.default_results = default_results

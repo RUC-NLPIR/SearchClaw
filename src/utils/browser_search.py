@@ -116,12 +116,12 @@ async def _search_google(
         f"q={quote_plus(query)}&num={min(num_results, 20)}&hl=en"
     )
 
-    await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
     # Wait for search results to appear — try multiple selectors
     try:
         await page.wait_for_selector(
-            "div#search, div#rso, div.g", timeout=10_000
+            "div#search, div#rso, div.g", timeout=10000
         )
     except Exception:
         logger.warning("Google search results container not found")
@@ -223,13 +223,13 @@ async def _search_duckduckgo(
     """
     url = f"https://duckduckgo.com/?q={quote_plus(query)}&ia=web"
 
-    await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
     # Wait for results to render
     try:
         await page.wait_for_selector(
             "[data-testid='result'], .result, .results--main",
-            timeout=10_000,
+            timeout=10000,
         )
     except Exception:
         logger.warning("DuckDuckGo search results not found")

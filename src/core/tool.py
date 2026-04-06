@@ -90,7 +90,7 @@ class Tool(ABC):
 
     # Maximum characters in tool result before caching to disk.
     # Prevents context blowup from large web pages.
-    max_result_size_chars: int = 50_000
+    max_result_size_chars: int = 50000
 
     # --- Methods ---
 
@@ -218,17 +218,17 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
     registry.register(WebSearchTool(
         default_results=cfg.get("web_search_default_results", 10),
         max_results=cfg.get("web_search_max_results", 20),
-        max_result_size_chars=cfg.get("max_result_size_chars", 15_000),
+        max_result_size_chars=cfg.get("max_result_size_chars", 15000),
         http_timeout=cfg.get("http_timeout", 30),
     ))
     registry.register(WebFetchTool(
-        max_result_size_chars=cfg.get("max_result_size_chars", 50_000),
+        max_result_size_chars=cfg.get("max_result_size_chars", 50000),
         http_timeout=cfg.get("http_timeout", 30),
         jina_timeout=cfg.get("jina_timeout", 60),
-        extraction_threshold=cfg.get("content_extraction_threshold", 15_000),
+        extraction_threshold=cfg.get("content_extraction_threshold", 15000),
     ))
     registry.register(DeepReadTool(
-        max_result_size_chars=cfg.get("max_result_size_chars", 30_000),
+        max_result_size_chars=cfg.get("max_result_size_chars", 30000),
     ))
     registry.register(CiteSourceTool())
     registry.register(ResearchPlanTool())
@@ -240,7 +240,7 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
         registry.register(AcademicSearchTool(
             default_results=cfg.get("academic_search_default_results", 5),
             max_results=cfg.get("academic_search_max_results", 10),
-            max_result_size_chars=cfg.get("max_result_size_chars", 20_000),
+            max_result_size_chars=cfg.get("max_result_size_chars", 20000),
             http_timeout=cfg.get("http_timeout", 30),
         ))
     except ImportError:
@@ -253,7 +253,7 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
             max_results=cfg.get("news_search_max_results", 10),
             default_days_back=cfg.get("news_search_default_days_back", 7),
             max_days_back=cfg.get("news_search_max_days_back", 30),
-            max_result_size_chars=cfg.get("max_result_size_chars", 15_000),
+            max_result_size_chars=cfg.get("max_result_size_chars", 15000),
             http_timeout=cfg.get("http_timeout", 30),
         ))
     except ImportError:

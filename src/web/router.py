@@ -46,7 +46,7 @@ _memory_base_dir = "./memory"
 _memory_enabled = True
 _max_relevant_memories = 5
 _default_max_turns = 20
-_compact_threshold_tokens = 80_000
+_compact_threshold_tokens = 80000
 _rate_limit_per_domain = 10
 # Tools config
 _web_search_default_results = 10
@@ -57,10 +57,10 @@ _news_search_default_results = 5
 _news_search_max_results = 10
 _news_search_default_days_back = 7
 _news_search_max_days_back = 30
-_max_result_size_chars = 50_000
+_max_result_size_chars = 50000
 _http_timeout = 30
 _jina_timeout = 60
-_content_extraction_threshold = 15_000
+_content_extraction_threshold = 15000
 _cache_dir = "./cache"
 # Hooks config
 _min_citations = 2
@@ -69,7 +69,7 @@ _min_answer_chars = 200
 # Server config
 _api_key = ""
 _cors_origins = ""
-_max_query_length = 10_000
+_max_query_length = 10000
 # Browser config
 _browser_enabled = False
 _browser_use_for_search = True
@@ -92,7 +92,7 @@ try:
         _max_relevant_memories = int(_memory_cfg.get("max_relevant_memories", 5))
         _limits = _settings.get("limits", {})
         _default_max_turns = int(_limits.get("max_turns", 20))
-        _compact_threshold_tokens = int(_limits.get("compact_threshold_tokens", 80_000))
+        _compact_threshold_tokens = int(_limits.get("compact_threshold_tokens", 80000))
         _rate_limit_per_domain = int(_limits.get("rate_limit_per_domain", 10))
         # Tools config
         _tools_cfg = _settings.get("tools", {})
@@ -104,10 +104,10 @@ try:
         _news_search_max_results = int(_tools_cfg.get("news_search_max_results", 10))
         _news_search_default_days_back = int(_tools_cfg.get("news_search_default_days_back", 7))
         _news_search_max_days_back = int(_tools_cfg.get("news_search_max_days_back", 30))
-        _max_result_size_chars = int(_tools_cfg.get("max_result_size_chars", 50_000))
+        _max_result_size_chars = int(_tools_cfg.get("max_result_size_chars", 50000))
         _http_timeout = int(_tools_cfg.get("http_timeout", 30))
         _jina_timeout = int(_tools_cfg.get("jina_timeout", 60))
-        _content_extraction_threshold = int(_tools_cfg.get("content_extraction_threshold", 15_000))
+        _content_extraction_threshold = int(_tools_cfg.get("content_extraction_threshold", 15000))
         _cache_dir = _tools_cfg.get("cache_dir", "./cache")
         # Hooks config
         _hooks_cfg = _settings.get("hooks", {})
@@ -387,7 +387,8 @@ def create_app() -> FastAPI:
         # within the same WebSocket session. Mirrors Claude Code's REPL
         # where messages accumulate across user turns.
         conversation_history: list[Message] = []
-        session_id = str(uuid.uuid4())
+        session_turns: list[dict] = []  # Accumulated query/answer pairs
+        session_id: str | None = None  # Set on first query or from client
 
         # Per-connection query rate tracking
         _query_timestamps: list[float] = []
@@ -434,8 +435,23 @@ def create_app() -> FastAPI:
                 # Check for explicit new-chat signal from frontend
                 if options.get("new_chat", False):
                     conversation_history.clear()
+                    session_turns.clear()
                     session_id = str(uuid.uuid4())
                     logger.info(f"New chat started [{session_id[:8]}]")
+
+                # Accept session_id from client (for reconnect continuity)
+                client_session_id = options.get("session_id", "")
+                if client_session_id and session_id is None:
+                    session_id = client_session_id
+                    # Restore turns from saved session file
+                    saved = session_storage.load_session(session_id)
+                    if saved and "turns" in saved:
+                        session_turns = saved["turns"]
+                        logger.info(f"Resumed session [{session_id[:8]}] with {len(session_turns)} prior turns")
+
+                # Generate new session_id if still unset (first query, no client id)
+                if session_id is None:
+                    session_id = str(uuid.uuid4())
 
                 max_turns = options.get("max_turns", _default_max_turns)
 
@@ -533,6 +549,8 @@ def create_app() -> FastAPI:
                         # Capture session summary from DONE event
                         elif event.type == EventType.DONE:
                             done_event_data = event.data
+                            # Inject session_id so frontend can track it
+                            event.data["session_id"] = session_id
                             if "session_summary" in event.data:
                                 session_summary = event.data["session_summary"]
                             # Capture condensed messages for conversation continuity
@@ -559,12 +577,24 @@ def create_app() -> FastAPI:
                             content=session_summary["final_answer"],
                         ))
 
-                # Save session transcript
+                # Accumulate this turn's query/answer
+                if session_summary:
+                    session_turns.append({
+                        "query": session_summary.get("query", ""),
+                        "final_answer": session_summary.get("final_answer", ""),
+                        "turn_count": done_event_data.get("turn_count", 0) if done_event_data else 0,
+                        "num_citations": len(done_event_data.get("citations", [])) if done_event_data else 0,
+                    })
+
+                # Save session transcript (all turns)
                 if session_summary and done_event_data:
                     try:
                         session_storage.save_session(session_id, {
-                            **session_summary,
-                            "turn_count": done_event_data.get("turn_count", 0),
+                            "query": session_turns[0]["query"],  # First query as sidebar title
+                            "turns": session_turns,
+                            "final_answer": session_summary.get("final_answer", ""),
+                            "plan_findings": session_summary.get("plan_findings", ""),
+                            "turn_count": sum(t.get("turn_count", 0) for t in session_turns),
                             "compaction_count": done_event_data.get("compaction_count", 0),
                             "num_citations": len(done_event_data.get("citations", [])),
                             "citations": done_event_data.get("citations", []),

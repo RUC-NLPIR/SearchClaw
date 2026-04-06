@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # The extraction model has its own context limit — sending 200K chars
 # of raw markdown would exceed it. We send a generous prefix that
 # captures most article content.
-_MAX_INPUT_FOR_EXTRACTION = 80_000
+_MAX_INPUT_FOR_EXTRACTION = 80000
 
 
 async def extract_content(
@@ -33,7 +33,7 @@ async def extract_content(
     research_query: str,
     source_url: str,
     source_title: str,
-    max_output_chars: int = 5_000,
+    max_output_chars: int = 5000,
 ) -> str | None:
     """
     Extract key facts and relevant URLs from raw web content.

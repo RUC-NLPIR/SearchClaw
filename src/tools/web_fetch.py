@@ -78,10 +78,10 @@ class WebFetchTool(Tool):
 
     def __init__(
         self,
-        max_result_size_chars: int = 50_000,
+        max_result_size_chars: int = 50000,
         http_timeout: int = 30,
         jina_timeout: int = 60,
-        extraction_threshold: int = 15_000,
+        extraction_threshold: int = 15000,
     ):
         self.max_result_size_chars = max_result_size_chars
         self._extraction_threshold = extraction_threshold

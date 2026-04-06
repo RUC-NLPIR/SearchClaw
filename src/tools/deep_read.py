@@ -58,7 +58,7 @@ class DeepReadTool(Tool):
     is_concurrency_safe = True
     is_read_only = True
 
-    def __init__(self, max_result_size_chars: int = 30_000):
+    def __init__(self, max_result_size_chars: int = 30000):
         self.max_result_size_chars = max_result_size_chars
 
     def prompt(self) -> str:

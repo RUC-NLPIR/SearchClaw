@@ -77,7 +77,7 @@ class AskUserTool(Tool):
 
     is_concurrency_safe = False  # Must be sequential — waits for user input
     is_read_only = True
-    max_result_size_chars = 1_000
+    max_result_size_chars = 1000
 
     def prompt(self) -> str:
         return (

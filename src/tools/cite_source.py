@@ -58,7 +58,7 @@ class CiteSourceTool(Tool):
 
     is_concurrency_safe = True
     is_read_only = True
-    max_result_size_chars = 5_000
+    max_result_size_chars = 5000
 
     def prompt(self) -> str:
         return (

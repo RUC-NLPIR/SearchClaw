@@ -59,7 +59,7 @@ class NewsSearchTool(Tool):
         max_results: int = 10,
         default_days_back: int = 7,
         max_days_back: int = 30,
-        max_result_size_chars: int = 15_000,
+        max_result_size_chars: int = 15000,
         http_timeout: int = 30,
     ):
         self.default_results = default_results

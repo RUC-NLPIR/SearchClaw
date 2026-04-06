@@ -14,6 +14,7 @@ let currentAssistantEl = null;
 let currentProseEl = null;
 let userWantsAutoScroll = true;
 let pendingNewChat = false;
+let currentSessionId = null;
 let authKey = sessionStorage.getItem('authKey') || '';
 
 // ── DOM ──
@@ -207,6 +208,11 @@ function onError(d) {
 function onDone(d) {
     removeCursor();
 
+    // Track session_id for multi-turn continuity across reconnects
+    if (d.session_id) {
+        currentSessionId = d.session_id;
+    }
+
     // Final markdown render — apply to ALL prose blocks, not just the last one
     if (currentAssistantEl) {
         for (const proseEl of currentAssistantEl.querySelectorAll('.assistant-prose')) {
@@ -363,6 +369,10 @@ function submitQuery(query) {
     if (pendingNewChat) {
         options.new_chat = true;
         pendingNewChat = false;
+        currentSessionId = null;
+    }
+    if (currentSessionId) {
+        options.session_id = currentSessionId;
     }
     ws.send(JSON.stringify({ query, options }));
 
@@ -385,6 +395,7 @@ function startNewChat() {
     citationCount = 0;
     citations = [];
     pendingNewChat = true;  // Signal backend to clear history on next query
+    currentSessionId = null;
     // Deselect active sidebar item
     const active = sidebarHistory.querySelector('.history-item.active');
     if (active) active.classList.remove('active');
@@ -664,30 +675,43 @@ function loadSession(sessionId) {
             citationCount = 0;
             citations = [];
 
-            // Render user query
-            const userEl = document.createElement('div');
-            userEl.className = 'msg-user';
-            userEl.innerHTML = `<div class="msg-user-bubble">${esc(data.query || '')}</div>`;
-            messagesEl.appendChild(userEl);
+            // Render all turns (backward-compatible with old single-turn sessions)
+            const turns = data.turns || [{ query: data.query, final_answer: data.final_answer }];
+            let lastAssistEl = null;
 
-            // Render assistant answer
-            if (data.final_answer) {
-                const assistEl = document.createElement('div');
-                assistEl.className = 'msg-assistant';
-                assistEl.innerHTML = `
-                    <div class="assistant-header">
-                        <div class="assistant-avatar">S</div>
-                        <span class="assistant-name">SearchClaw</span>
-                    </div>
-                `;
+            for (const turn of turns) {
+                // Render user query
+                if (turn.query) {
+                    const userEl = document.createElement('div');
+                    userEl.className = 'msg-user';
+                    userEl.innerHTML = `<div class="msg-user-bubble">${esc(turn.query)}</div>`;
+                    messagesEl.appendChild(userEl);
+                }
 
-                const proseEl = document.createElement('div');
-                proseEl.className = 'assistant-prose';
-                proseEl._raw = data.final_answer;
-                proseEl.innerHTML = mdFinal(data.final_answer);
-                assistEl.appendChild(proseEl);
+                // Render assistant answer
+                if (turn.final_answer) {
+                    const assistEl = document.createElement('div');
+                    assistEl.className = 'msg-assistant';
+                    assistEl.innerHTML = `
+                        <div class="assistant-header">
+                            <div class="assistant-avatar">S</div>
+                            <span class="assistant-name">SearchClaw</span>
+                        </div>
+                    `;
 
-                // Stats bar
+                    const proseEl = document.createElement('div');
+                    proseEl.className = 'assistant-prose';
+                    proseEl._raw = turn.final_answer;
+                    proseEl.innerHTML = mdFinal(turn.final_answer);
+                    assistEl.appendChild(proseEl);
+
+                    messagesEl.appendChild(assistEl);
+                    lastAssistEl = assistEl;
+                }
+            }
+
+            // Stats bar on the last assistant block
+            if (lastAssistEl) {
                 const numCitations = data.num_citations || 0;
                 const turnCount = data.turn_count || 0;
                 const statsEl = document.createElement('div');
@@ -696,13 +720,12 @@ function loadSession(sessionId) {
                     <span>${turnCount} turns</span>
                     <span>${numCitations} sources</span>
                 `;
-                assistEl.appendChild(statsEl);
-
-                messagesEl.appendChild(assistEl);
+                lastAssistEl.appendChild(statsEl);
             }
 
-            // Don't start a new backend session — this is read-only viewing
-            pendingNewChat = true;
+            // Continue this session if user sends a follow-up query
+            currentSessionId = sessionId;
+            pendingNewChat = false;
             conversation.scrollTop = 0;
         })
         .catch(e => console.warn('Failed to load session:', e));

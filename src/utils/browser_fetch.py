@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 async def browser_fetch(
     url: str,
     manager: BrowserManager = None,
-    timeout: int = 30_000,
+    timeout: int = 30000,
 ) -> dict | None:
     """
     Fetch a web page via browser — handles JS-rendered pages and auth-walled sites.
