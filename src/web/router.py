@@ -357,6 +357,16 @@ def create_app() -> FastAPI:
             )
         return session
 
+    @app.delete("/api/sessions/{session_id}")
+    async def delete_session(session_id: str):
+        """Delete a session."""
+        if session_storage.delete_session(session_id):
+            return {"ok": True}
+        return JSONResponse(
+            content={"error": "Session not found"},
+            status_code=404,
+        )
+
     @app.websocket("/ws/search")
     async def search_websocket(ws: WebSocket):
         """

@@ -227,7 +227,25 @@ body {
     transition: background 0.15s, color 0.15s;
     overflow: hidden;
     margin-bottom: 2px;
+    position: relative;
 }
+
+.history-delete-btn {
+    position: absolute;
+    top: 8px;
+    right: 6px;
+    background: none;
+    border: none;
+    color: var(--text-faint, #999);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.history-item:hover .history-delete-btn { opacity: 1; }
+.history-delete-btn:hover { color: #e55; background: rgba(200,50,50,0.1); }
 
 .history-item-query {
     white-space: nowrap;

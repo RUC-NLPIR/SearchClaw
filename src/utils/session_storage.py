@@ -82,3 +82,12 @@ class SessionStorage:
         # Sort by timestamp descending (most recent first)
         sessions.sort(key=lambda s: s.get("timestamp", ""), reverse=True)
         return sessions[:limit]
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session from disk. Returns True if deleted."""
+        path = self.base_dir / f"{session_id}.json"
+        if path.exists():
+            path.unlink()
+            logger.info(f"Session deleted: {session_id}")
+            return True
+        return False

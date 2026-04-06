@@ -646,12 +646,39 @@ function loadSessions() {
                 el.innerHTML = `
                     <div class="history-item-query">${esc(queryText)}</div>
                     ${meta.length ? `<div class="history-item-meta">${esc(meta.join(' · '))}</div>` : ''}
+                    <button class="history-delete-btn" title="Delete session">&#10005;</button>
                 `;
                 el.addEventListener('click', () => loadSession(s.session_id));
+                el.querySelector('.history-delete-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteSession(s.session_id, el);
+                });
                 sidebarHistory.appendChild(el);
             }
         })
         .catch(e => console.warn('Failed to load sessions:', e));
+}
+
+function deleteSession(sessionId, el) {
+    fetch(`/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+    })
+        .then(r => {
+            if (r.ok) {
+                el.remove();
+                // If we just deleted the currently viewed session, go to welcome
+                if (currentSessionId === sessionId) {
+                    currentSessionId = null;
+                    startNewChat();
+                }
+                // Show empty state if no sessions left
+                if (!sidebarHistory.querySelector('.history-item')) {
+                    sidebarHistory.innerHTML = '<div class="sidebar-history-empty">No past sessions</div>';
+                }
+            }
+        })
+        .catch(e => console.warn('Failed to delete session:', e));
 }
 
 function loadSession(sessionId) {
