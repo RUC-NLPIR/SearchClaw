@@ -1,0 +1,187 @@
+# SearchClaw Settings
+# ── Environment Variables ──
+# The following environment variables must be set for the system to work.
+# You can set them in your shell profile, a .env file, or via export:
+#
+#   # ── LLM Provider (at least one REQUIRED) ──
+#   export ANTHROPIC_API_KEY="sk-ant-..."     # Required if using anthropic/ models
+#   export OPENAI_API_KEY="sk-..."            # Required if using openai/ models
+#   # Note: not needed if using a custom base_url (local proxy, vLLM, etc.)
+#
+#   # ── Web Search (RECOMMENDED) ──
+#   export SERPER_API_KEY="..."               # Google search via serper.dev
+#                                             # Without this, falls back to DuckDuckGo HTML scraping 
+#                                             # (less reliable, may break if DDG changes HTML)
+#
+#   # ── Web Fetch (RECOMMENDED) ──
+#   export JINA_API_KEY="jina_..."            # Jina Reader API (r.jina.ai)
+#                                             # Without this, falls back to direct HTTP fetch
+#                                             # (can't handle JS-heavy pages or PDFs)
+#
+#   # ── News Search (OPTIONAL) ──
+#   export NEWSAPI_KEY="..."                  # newsapi.org — recent news articles
+#                                             # Without this, falls back to Google News RSS
+#
+#   # ── Server Auth (OPTIONAL) ──
+#   export SEARCH_CLAW_API_KEY="..."          # Protect the server API with a bearer token
+#                                             # Only needed for non-localhost deployments
+#                                             # Can also be set via api_key below
+#
+#   # ── Academic Search ──
+#   # No API key needed — uses Semantic Scholar API (free, no auth required)
+#
+
+llm:
+  # Default model for the main conversation loop
+  # Model names require a provider prefix for litellm routing.
+  # For custom proxies (copilot-api, LiteLLM proxy, etc.) that serve
+  # an OpenAI-compatible API, use the "openai/" prefix:
+  #   "openai/claude-sonnet-4.6"    — routes through OpenAI-compatible format
+  # The part after the prefix is the model name sent in the API request body.
+  default_model: "anthropic/claude-sonnet-4-20250514"
+  # Cheap model for side-queries (ranking, relevance, quality checks)
+  side_query_model: "anthropic/claude-haiku-3-20250305"
+  # Fallback model if primary is unavailable
+  fallback_model: "anthropic/claude-sonnet-4-20250514"
+  # Maximum output tokens per LLM call
+  max_tokens: 16384
+
+  # Optional: base URL for the LLM API.
+  # Use this to point at a custom/local endpoint (e.g. vLLM, Ollama, LiteLLM proxy, Azure).
+  # When set, litellm sends all requests here instead of the provider's default URL.
+  # Examples:
+  #   "http://localhost:11434"           — Ollama
+  #   "http://localhost:8000/v1"         — vLLM / LiteLLM proxy
+  #   "https://my-azure.openai.azure.com" — Azure OpenAI
+  # Leave blank or omit to use the provider's default endpoint.
+  base_url: ""
+
+  # Optional: separate base URL for the side-query model.
+  # If blank, falls back to the main base_url above.
+  side_query_base_url: ""
+
+  # Retry on transient errors (429, 5xx, connection, timeout)
+  max_retries: 3
+  retry_base_delay_ms: 500
+
+limits:
+  # Maximum turns in the agentic loop before forcing a stop
+  max_turns: 50
+  # Token threshold to trigger context compaction
+  compact_threshold_tokens: 80000
+  # Rate limit: max requests per domain per minute
+  rate_limit_per_domain: 50
+
+tools:
+  # Directory for caching oversized tool results (truncated pages, etc.)
+  # Defaults to ./cache relative to the project root
+  cache_dir: "./cache"
+  # Default number of results for web search (LLM can override per-call)
+  web_search_default_results: 10
+  # Hard cap on web search results
+  web_search_max_results: 20
+  # Default number of results for academic paper search
+  academic_search_default_results: 5
+  academic_search_max_results: 10
+  # Default number of results for news search
+  news_search_default_results: 5
+  news_search_max_results: 10
+  # News search: how many days back to search by default
+  news_search_default_days_back: 7
+  news_search_max_days_back: 30
+  # Max chars per tool result before caching to disk
+  max_result_size_chars: 20000
+  # HTTP timeout (seconds) for tool API calls (search, fetch, etc.)
+  http_timeout: 30
+  # Jina Reader API timeout (longer — handles JS rendering, PDFs)
+  jina_timeout: 60
+  # Content extraction: compress large web pages before adding to context.
+  # When fetched content exceeds this threshold (chars), a cheap LLM call
+  # extracts key facts and relevant URLs instead of adding raw content.
+  # Set to 0 to disable extraction (always use raw truncation).
+  content_extraction_threshold: 15000
+
+hooks:
+  # Citation quality gate: minimum cited sources before answer is accepted
+  # Set to 0 to disable the citation requirement
+  min_citations: 2
+  # Source diversity gate: minimum unique source websites in citations
+  min_domains: 2
+  # Answer completeness gate: minimum answer length (chars)
+  min_answer_chars: 200
+
+browser:
+  # Master switch — must be true for any browser features.
+  # Requires: pip install 'search-agent[browser]' && playwright install chromium
+  enabled: false
+  # Independently enable browser for search and/or fetch.
+  # Both default to true so that when enabled=true, the full
+  # browser integration is active; set either to false to use
+  # browser for only one purpose.
+  #
+  # NOTE on browser search: Search engines (Google, Bing, DDG) aggressively
+  # block automated browsers. Browser search ONLY works in CDP mode — it
+  # requires your real Chrome with existing cookies and browsing history.
+  # In Playwright mode, browser search is silently skipped and the agent
+  # falls back to DuckDuckGo HTML scraping.
+  #
+  # Browser fetch works in both modes — Playwright mode handles JS-rendered
+  # pages, CDP mode additionally handles auth-walled pages (Twitter, etc.).
+  use_for_search: true     # Browser as fallback in web_search chain (CDP only)
+  use_for_fetch: true      # Browser as fallback in web_fetch chain (both modes)
+  # Connection mode:
+  #   "playwright" — launches Playwright's managed Chromium (default, no setup needed)
+  #   "cdp"        — connects to user's real Chrome via Chrome DevTools Protocol
+  #                  (inherits all cookies, extensions, logins — best for auth-walled pages)
+  #                  Requires launching Chrome with:
+  #                    google-chrome --remote-debugging-port=9222 --user-data-dir=/path/to/profile
+  #                  IMPORTANT (Chrome 146+): --user-data-dir MUST be set to a non-default
+  #                  path, otherwise Chrome silently ignores --remote-debugging-port.
+  #                  macOS example:
+  #                    /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  #                      --remote-debugging-port=9222 \
+  #                      --user-data-dir="$HOME/chrome-cdp-profile"
+  mode: "playwright"
+  # CDP debug port (only used when mode is "cdp")
+  cdp_port: 9222
+  # Path to Chrome/Edge binary. Auto-detected if empty.
+  # Examples:
+  #   macOS: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  #   Linux: "/usr/bin/google-chrome"
+  chrome_path: ""
+  # Run browser without visible window
+  headless: true
+  # User data directory for persistent login state (Playwright mode only).
+  # Set to your Chrome profile path to reuse existing logins:
+  #   macOS: "~/Library/Application Support/Google/Chrome"
+  #   Linux: "~/.config/google-chrome"
+  # Leave empty for a fresh profile each session.
+  # WARNING: Using your main Chrome profile while Chrome is already running
+  # may cause conflicts — use a copy or a separate profile directory.
+  user_data_dir: ""
+  # Search engine for browser-based search
+  search_engine: "google"   # google | duckduckgo
+
+memory:
+  # Enable persistent memory system
+  enabled: true
+  # Base directory for memory storage
+  base_dir: "./memory"
+  # Maximum memories to inject per query
+  max_relevant_memories: 5
+
+server:
+  host: "127.0.0.1"
+  port: 8000
+  # API key for authenticating requests. When set, all HTTP and WebSocket
+  # requests must include this key via:
+  #   - Header: Authorization: Bearer <key>
+  #   - Query param: ?api_key=<key>
+  # Leave empty or omit to disable authentication (NOT recommended for
+  # non-localhost deployments).
+  # Can also be set via the SEARCH_CLAW_API_KEY environment variable.
+  api_key: ""
+  # Allowed CORS origins (comma-separated). Use "*" to allow all origins
+  # (not recommended). Leave empty to allow only same-origin requests.
+  # Example: "http://localhost:3000,https://myapp.example.com"
+  cors_origins: ""

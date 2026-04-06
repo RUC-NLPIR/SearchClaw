@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="hsl(53,28.6%,94.5%)">
+    <title>SearchClaw</title>
+    <link rel="icon" type="image/png" href="/static/SearchClaw_icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Login overlay (shown when server.api_key is configured) -->
+    <div class="login-overlay" id="loginOverlay" style="display:none">
+        <div class="login-box">
+            <h2>SearchClaw</h2>
+            <p>Enter password to continue</p>
+            <form onsubmit="doLogin(event)">
+                <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password">
+                <button type="submit" class="login-btn">Login</button>
+            </form>
+            <p class="login-error" id="loginError"></p>
+        </div>
+    </div>
+
+    <div class="app" id="appContainer" style="display:none">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-top">
+                <button class="sidebar-btn new-chat-btn" onclick="startNewChat()" title="New chat">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                    <span>New research</span>
+                </button>
+            </div>
+            <div class="sidebar-history" id="sidebarHistory">
+                <!-- past chats listed here -->
+            </div>
+            <div class="sidebar-bottom">
+                <div class="sidebar-status">
+                    <span class="status-indicator" id="statusIndicator"></span>
+                    <span class="status-label" id="statusLabel">Connecting...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main -->
+        <div class="main">
+            <!-- Top bar -->
+            <div class="topbar">
+                <button class="topbar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+                </button>
+                <span class="topbar-title">SearchClaw</span>
+                <span class="topbar-model" id="topbarModel"></span>
+            </div>
+
+            <!-- Conversation -->
+            <div class="conversation" id="conversation">
+                <!-- Welcome -->
+                <div class="welcome" id="welcomeScreen">
+                    <div class="welcome-content">
+                        <div class="welcome-icon">
+                            <img src="/static/SearchClaw_icon.png" alt="SearchClaw" width="100" height="100">
+                        </div>
+                        <h1>What would you like to search?</h1>
+                        <p class="welcome-sub">I'll search the web, read sources, and synthesize a well-cited answer.</p>
+                        <div class="suggestions">
+                            <button class="suggestion" onclick="submitExample(this)">What are the latest advances in quantum computing?</button>
+                            <button class="suggestion" onclick="submitExample(this)">Compare React, Vue, and Svelte for building web apps</button>
+                            <button class="suggestion" onclick="submitExample(this)">What causes aurora borealis and where to see them?</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                <div class="messages" id="messages" style="display:none;"></div>
+            </div>
+
+            <!-- Input -->
+            <div class="input-area">
+                <form class="input-form" id="queryForm" onsubmit="handleSubmit(event)">
+                    <div class="input-box" id="inputBox">
+                        <textarea id="queryInput" placeholder="Ask anything..." rows="1" autofocus></textarea>
+                        <button type="submit" class="send-btn" id="submitBtn" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                        </button>
+                    </div>
+                    <div class="input-hint">SearchClaw uses AI to research the web. Verify important information.</div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+# Runtime data — generated during research sessions
+sessions/
+memory/
+cache/
+browser_data/
+
+# Chrome profile data in tests/ (created by --user-data-dir for CDP testing).
+# Ignore everything in tests/ except Python test files.
+tests/*
+!tests/*.py
+
+# Reference/scratch files
+ref/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Claude Code
+.claude/
