@@ -606,7 +606,7 @@ queryInput.addEventListener('input', () => {
 });
 
 queryInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleSubmit(e); }
 });
 
 // ── Session History ──
