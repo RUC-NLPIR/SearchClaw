@@ -2,7 +2,6 @@
 Session persistence — save/load research session transcripts.
 
 Stores session transcripts as JSON files for later review.
-Mirrors Claude Code's transcript recording in QueryEngine.ts.
 """
 
 from __future__ import annotations

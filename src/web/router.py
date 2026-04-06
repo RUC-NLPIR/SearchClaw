@@ -394,8 +394,8 @@ def create_app() -> FastAPI:
         logger.info("WebSocket connection established")
 
         # Per-connection conversation history — persists across queries
-        # within the same WebSocket session. Mirrors Claude Code's REPL
-        # where messages accumulate across user turns.
+        # within the same WebSocket session. Messages accumulate across
+        # user turns.
         conversation_history: list[Message] = []
         session_turns: list[dict] = []  # Accumulated query/answer pairs
         session_id: str | None = None  # Set on first query or from client

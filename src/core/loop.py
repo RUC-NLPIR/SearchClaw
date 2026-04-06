@@ -1,7 +1,7 @@
 """
 The agentic query loop — the heart of the search agent.
 
-Mirrors Claude Code's query.ts — a while(true) loop with explicit State,
+A while(true) loop with explicit State,
 streaming via AsyncGenerator, tool execution, compaction, and stop hooks.
 
 The loop:
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 class QueryParams:
     """
     Parameters for a single query loop invocation.
-    Using query loop (similar to Claude Code) to run a complete research session.
+    Runs a complete research session with tool use and compaction.
     """
     query: str
     system_prompt: str
@@ -402,9 +402,8 @@ async def _execute_tools(
     """
     Execute tool calls, running concurrency-safe tools in parallel.
 
-    Mirrors Claude Code's tool execution — tools marked is_concurrency_safe
-    can run simultaneously (e.g., multiple web searches), while unsafe
-    tools run sequentially.
+    Tools marked is_concurrency_safe can run simultaneously (e.g.,
+    multiple web searches), while unsafe tools run sequentially.
     """
     context = ToolUseContext(
         session_id=params.session_id,
@@ -574,7 +573,7 @@ async def _run_stop_hooks(
     Returns (should_continue, feedback).
     If should_continue is True, the loop injects feedback and continues.
 
-    Follows Claude Code's stop hooks — the model thinks it's done,
+    Follows the stop hooks pattern — the model thinks it's done,
     but a quality check might disagree and force another iteration.
     """
     if params.hook_engine is None:
@@ -614,9 +613,8 @@ def _condense_for_history(messages: list[Message]) -> list[Message]:
     Drops tool-call details and tool results to save context tokens.
     Preserves the conversation flow without the research mechanics.
 
-    This follows Claude Code's approach where messages accumulate
-    across turns, but we strip out the tool interaction details
-    to keep the history lean.
+    Messages accumulate across turns, but we strip out the tool
+    interaction details to keep the history lean.
     """
     condensed = []
     for msg in messages:

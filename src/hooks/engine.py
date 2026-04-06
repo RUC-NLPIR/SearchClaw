@@ -1,9 +1,9 @@
 """
 Hook execution engine.
 
-Mirrors Claude Code's hooks system — runs quality checks at key
-lifecycle points. Hooks act as quality gates that can force the
-agent to continue researching if the answer doesn't meet standards.
+Runs quality checks at key lifecycle points. Hooks act as quality
+gates that can force the agent to continue researching if the answer
+doesn't meet standards.
 
 Hook events:
 - stop: Run before finalizing an answer (quality gate)
@@ -50,8 +50,8 @@ class HookEngine:
     """
     Runs quality checks at key lifecycle points.
 
-    Follows Claude Code's hook execution — stop hooks run when the
-    model wants to finalize, post-tool hooks run after each tool call.
+    Stop hooks run when the model wants to finalize, post-tool hooks
+    run after each tool call.
     """
 
     def __init__(self):

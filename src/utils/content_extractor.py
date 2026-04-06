@@ -5,9 +5,8 @@ When a fetched web page exceeds a size threshold, a cheap side-query LLM
 call extracts key facts, relevant URLs, and structural URLs (pagination,
 sub-pages) instead of dumping the raw content into the main context.
 
-This is a pre-injection compression step specific to the search agent.
-Claude Code adds raw results and compacts later; for a research agent
-doing synthesis across multiple pages, pre-extraction is more appropriate
+This is a pre-injection compression step. For a research agent doing
+synthesis across multiple pages, pre-extraction is more appropriate
 because the model needs facts and attribution, not raw HTML artifacts.
 
 The full raw content is always cached to disk for deep_read access.

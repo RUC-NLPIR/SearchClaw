@@ -3,10 +3,8 @@ Deep read tool — reads specific sections from cached page content.
 
 When web_fetch truncates a large page, the full content is cached to disk.
 The deep_read tool lets the agent retrieve specific sections from that
-cached content, avoiding the need to re-fetch the page.
-
-Mirrors Claude Code's content replacement pattern — cached_path is
-set by web_fetch, and deep_read uses it to access the full content.
+cached content, avoiding the need to re-fetch the page. The cached_path
+is set by web_fetch, and deep_read uses it to access the full content.
 """
 
 from __future__ import annotations

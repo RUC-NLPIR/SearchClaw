@@ -2,8 +2,7 @@
 Interactive user question tool.
 
 Allows the agent to pause mid-research and ask the user a clarifying
-question with selectable options. Borrowed from Claude Code's
-AskUserQuestionTool pattern.
+question with selectable options.
 
 The tool doesn't compute a result itself — it returns a "pending"
 ToolResult with metadata containing the question and options. The

@@ -2,7 +2,7 @@
 LLM client wrapper around litellm.
 
 Provides streaming calls for the main loop and quick side-queries
-for routing/ranking (the Haiku-equivalent pattern from Claude Code).
+for routing/ranking tasks.
 
 All model names and base URLs are configurable via config/settings.yaml
 or by passing a ModelConfig directly.
@@ -31,9 +31,9 @@ def _is_retryable(error: Exception) -> bool:
     """
     Decide whether an LLM error is transient and worth retrying.
 
-    Mirrors Claude Code's shouldRetry() — retries on rate limits,
-    overload, connection errors, server errors. Does NOT retry on
-    400 Bad Request (malformed request won't fix itself on retry).
+    Retries on rate limits, overload, connection errors, server errors.
+    Does NOT retry on 400 Bad Request (malformed request won't fix
+    itself on retry).
     """
     error_str = str(error).lower()
     error_type = type(error).__name__
@@ -143,10 +143,9 @@ class LLMClient:
         """
         Stream an LLM response, yielding StreamEvents.
 
-        Mirrors Claude Code's callModel() + withRetry() — retries transient
-        errors (rate limits, overload, connection) with exponential backoff,
-        then falls back to fallback model. Permanent errors (400 Bad Request)
-        fail immediately.
+        Retries transient errors (rate limits, overload, connection) with
+        exponential backoff, then falls back to fallback model. Permanent
+        errors (400 Bad Request) fail immediately.
         """
         target_model = model or self.config.default_model
         target_max_tokens = max_tokens or self.config.max_tokens
@@ -292,8 +291,7 @@ async def side_query(
     """
     Quick, non-streaming LLM call for routing/ranking/quality checks.
 
-    Mirrors Claude Code's sideQuery — uses a cheap, fast model (Haiku)
-    for tasks like:
+    Uses a cheap, fast model for tasks like:
     - Ranking search results by relevance
     - Selecting relevant memories
     - Quality-checking the final answer

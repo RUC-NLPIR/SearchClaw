@@ -1,12 +1,11 @@
 """
 Tool base class and registry.
 
-Mirrors Claude Code's Tool.ts — every tool implements a common interface
-with input validation, execution, and metadata (concurrency safety,
-result size limits, etc.). The ToolRegistry collects all tools and
-provides lookup.
+Every tool implements a common interface with input validation,
+execution, and metadata (concurrency safety, result size limits, etc.).
+The ToolRegistry collects all tools and provides lookup.
 
-Key design decisions from Claude Code:
+Key design decisions:
 - Fail-closed defaults: is_concurrency_safe=False, is_read_only=True
 - Each tool contributes to the system prompt via prompt()
 - max_result_size_chars prevents context blowup from large pages
@@ -36,8 +35,7 @@ class ToolUseContext:
     """
     Context passed to every tool call.
 
-    Mirrors Claude Code's ToolUseContext — carries session state
-    and references to shared resources.
+    Carries session state and references to shared resources.
     """
     session_id: str = ""
     turn_count: int = 0
@@ -55,7 +53,7 @@ class Tool(ABC):
     """
     Base class for all tools in the search agent.
 
-    Mirrors Claude Code's Tool interface. Each tool:
+    Each tool:
     - Has a name and JSON Schema for its inputs
     - Contributes a prompt() section to the system prompt
     - Declares concurrency safety and result size limits
@@ -139,8 +137,8 @@ class Tool(ABC):
         """
         If data exceeds max_result_size_chars, cache to disk and return preview.
 
-        Mirrors Claude Code's contentReplacementState — oversized results
-        are persisted to disk with a preview + path in the context.
+        Oversized results are persisted to disk with a preview + path
+        in the context, so the agent can use deep_read to access them.
         """
         if len(data) <= self.max_result_size_chars:
             return data, False, None
@@ -163,9 +161,8 @@ class ToolRegistry:
     """
     Collects all available tools and provides lookup.
 
-    Mirrors Claude Code's tools.ts assembleToolPool() — single source
-    of truth for which tools are available. Tools are registered at
-    startup and looked up by name during the agentic loop.
+    Single source of truth for which tools are available. Tools are
+    registered at startup and looked up by name during the agentic loop.
     """
 
     def __init__(self):
@@ -199,7 +196,7 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
     """
     Build the default tool registry with all search tools.
 
-    Called once at startup. Mirrors Claude Code's getAllBaseTools().
+    Called once at startup.
 
     Args:
         config: Optional dict of tool configuration from settings.yaml.

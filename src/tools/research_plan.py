@@ -1,9 +1,9 @@
 """
 Research plan tool — structured task decomposition for complex queries.
 
-Inspired by Claude Code's TodoWrite system. Lets the LLM decompose
-complex, multi-part research questions into tracked sub-tasks, work
-through them systematically, and record findings as it goes.
+Lets the LLM decompose complex, multi-part research questions into
+tracked sub-tasks, work through them systematically, and record
+findings as it goes.
 
 A single tool with action={create, update, check} to keep the tool
 count small. State lives on LoopState.research_plan (in-memory, single

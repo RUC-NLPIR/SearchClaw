@@ -4,8 +4,6 @@ Per-domain rate limiting for web requests.
 Uses aiolimiter for async-compatible rate limiting. Each domain gets
 its own rate limiter to prevent overwhelming any single server while
 allowing concurrent requests to different domains.
-
-Mirrors Claude Code's rate limiter but specialized for web scraping.
 """
 
 from __future__ import annotations

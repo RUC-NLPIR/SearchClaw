@@ -2,8 +2,7 @@
 Core types for the search agent harness.
 
 These types flow through the entire system — the agentic loop, tools,
-hooks, and WebSocket events. Mirrors Claude Code's types/message.ts
-and Tool.ts type definitions.
+hooks, and WebSocket events.
 """
 
 from __future__ import annotations
@@ -70,8 +69,7 @@ class Message:
     """
     A single message in the conversation.
 
-    Unlike Claude Code which uses a rich union type (AssistantMessage | UserMessage | ...),
-    we keep it simple with a role + content model. Metadata carries extra info
+    Uses a simple role + content model. Metadata carries extra info
     (citations, tool_use_id, compaction markers, etc.).
     """
     role: Literal["user", "assistant", "system", "tool"]
@@ -156,9 +154,8 @@ class ToolResult:
     """
     Result of a tool execution.
 
-    Mirrors Claude Code's ToolResult<T> — data is the main output,
-    citations are accumulated across the session, and cached_path
-    points to the full content when truncated.
+    data is the main output, citations are accumulated across the
+    session, and cached_path points to the full content when truncated.
     """
     data: str
     citations: list[Citation] = field(default_factory=list)
@@ -198,8 +195,8 @@ class StreamEvent:
     """
     Events streamed from the agentic loop to the UI via WebSocket.
 
-    Follow Claude Code's StreamEvent type — the loop is an AsyncGenerator
-    that yields these, completely decoupled from the presentation layer.
+    The loop is an AsyncGenerator that yields these, completely
+    decoupled from the presentation layer.
     """
     type: EventType
     data: dict = field(default_factory=dict)
@@ -237,9 +234,9 @@ class ResearchPlan:
     """
     Structured research plan for complex queries.
 
-    Inspired by Claude Code's TodoWrite — lets the LLM decompose
-    complex questions into tracked sub-tasks, work through them
-    systematically, and verify completeness before finalizing.
+    Lets the LLM decompose complex questions into tracked sub-tasks,
+    work through them systematically, and verify completeness before
+    finalizing.
     """
     tasks: list[ResearchTask] = field(default_factory=list)
 
@@ -292,8 +289,8 @@ class LoopState:
     """
     Mutable state carried between iterations of the agentic loop.
 
-    Mirrors Claude Code's query.ts State type — the loop destructures this
-    at the top of each iteration and creates a new one at each continue site.
+    The loop destructures this at the top of each iteration and
+    creates a new one at each continue site.
     """
     messages: list[Message]
     turn_count: int = 0
