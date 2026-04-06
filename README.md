@@ -4,9 +4,9 @@
 
 <h1 align="center">SearchClaw</h1>
 
-<p align="center">
+<h3 align="center">
   An agentic web research tool that searches, reads, and synthesizes well-cited answers.
-</p>
+</h3>
 
 ---
 
