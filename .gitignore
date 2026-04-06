@@ -4,10 +4,9 @@ memory/
 cache/
 browser_data/
 
-# Chrome profile data in tests/ (created by --user-data-dir for CDP testing).
-# Ignore everything in tests/ except Python test files.
-tests/*
-!tests/*.py
+# Tests and docs (not published)
+tests/
+docs/
 
 # Reference/scratch files
 ref/
