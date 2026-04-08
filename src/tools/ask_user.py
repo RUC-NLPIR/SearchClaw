@@ -37,7 +37,9 @@ class AskUserTool(Tool):
     description = (
         "Ask the user a clarifying question when their query is ambiguous "
         "or could benefit from narrowing the scope. Present 2-5 clear, "
-        "mutually exclusive options for the user to choose from. The user's "
+        "mutually exclusive options for the user to choose from. Do NOT "
+        "include generic options like 'Other' or 'Something else' — the "
+        "UI always provides a free-text input automatically. The user's "
         "selection will guide your subsequent research."
     )
     input_schema = {
@@ -88,6 +90,10 @@ class AskUserTool(Tool):
             "- Do NOT ask for trivial or obvious things\n"
             "- Present 2-5 clear, distinct options\n"
             "- Put the most likely option first\n"
+            "- Do NOT include catch-all options like 'Other', 'Something else', "
+            "'None of the above', or 'Custom'. The UI automatically provides "
+            "a free-text input for the user to type their own answer. Only "
+            "provide specific, meaningful options.\n"
             "- Maximum 1 question per research session\n"
             "- If the query is clear enough, skip this and start researching"
         )

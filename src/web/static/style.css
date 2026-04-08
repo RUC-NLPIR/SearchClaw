@@ -1059,8 +1059,12 @@ body {
    USER QUESTION (ask_user tool)
    ================================================================ */
 .user-question-block {
-    background: var(--bg-100);
-    border: 1px solid var(--accent);
+    --uq-warm: hsl(36, 80%, 50%);
+    --uq-warm-hover: hsl(36, 80%, 44%);
+    --uq-warm-light: hsl(40, 70%, 95%);
+    --uq-warm-border: hsl(40, 50%, 78%);
+    background: var(--uq-warm-light);
+    border: 1px solid var(--uq-warm);
     border-radius: 12px;
     padding: 16px 18px;
     margin: 12px 0;
@@ -1084,8 +1088,10 @@ body {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+    width: 100%;
+    box-sizing: border-box;
     padding: 10px 14px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--uq-warm-border);
     border-radius: 8px;
     background: var(--canvas-bg);
     cursor: pointer;
@@ -1096,15 +1102,15 @@ body {
 }
 
 .uq-option:hover:not(:disabled) {
-    border-color: var(--accent);
-    background: var(--accent-light);
-    box-shadow: 0 0 0 1px var(--accent-light);
+    border-color: var(--uq-warm);
+    background: var(--uq-warm-light);
+    box-shadow: 0 0 0 1px var(--uq-warm-light);
 }
 
 .uq-option.selected {
-    border-color: var(--accent);
-    background: var(--accent-light);
-    box-shadow: 0 0 0 2px var(--accent-light);
+    border-color: var(--uq-warm);
+    background: var(--uq-warm-light);
+    box-shadow: 0 0 0 2px var(--uq-warm-light);
 }
 
 .uq-option:disabled:not(.selected) {
@@ -1123,6 +1129,59 @@ body {
     color: var(--text-muted);
     margin-top: 3px;
     line-height: 1.4;
+}
+
+.uq-other-input {
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    gap: 8px;
+    align-items: center;
+}
+
+.uq-other-text {
+    flex: 1;
+    padding: 9px 12px;
+    border: 1px solid var(--uq-warm-border);
+    border-radius: 8px;
+    background: var(--canvas-bg);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.93em;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.uq-other-text:focus {
+    border-color: var(--uq-warm);
+}
+
+.uq-other-text:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.uq-other-submit {
+    padding: 9px 16px;
+    border: none;
+    border-radius: 8px;
+    background: var(--uq-warm);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.93em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+
+.uq-other-submit:hover:not(:disabled) {
+    background: var(--uq-warm-hover);
+}
+
+.uq-other-submit:disabled {
+    opacity: 0.45;
+    cursor: default;
 }
 
 /* ================================================================

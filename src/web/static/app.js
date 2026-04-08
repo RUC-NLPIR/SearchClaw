@@ -264,10 +264,11 @@ function onUserQuestion(d) {
     const el = document.createElement('div');
     el.className = 'user-question-block';
 
+    const opts = d.options || [];
+
     let html = `<div class="uq-question">${esc(d.question)}</div>`;
     html += '<div class="uq-options">';
-    for (const opt of (d.options || [])) {
-        // Use data attribute for the label to avoid XSS in onclick
+    for (const opt of opts) {
         html += '<button class="uq-option">';
         html += `<span class="uq-option-label">${esc(opt.label)}</span>`;
         if (opt.description) {
@@ -275,14 +276,49 @@ function onUserQuestion(d) {
         }
         html += '</button>';
     }
+    // "Other" option with free-text input
+    html += '<div class="uq-other">';
+    html += '<button class="uq-option uq-other-btn">';
+    html += '<span class="uq-option-label">Other</span>';
+    html += '<span class="uq-option-desc">Type your own answer</span>';
+    html += '</button>';
+    html += '<div class="uq-other-input" style="display:none">';
+    html += '<input type="text" class="uq-other-text" placeholder="Type your answer...">';
+    html += '<button class="uq-other-submit">Send</button>';
+    html += '</div>';
+    html += '</div>';
     html += '</div>';
     el.innerHTML = html;
 
     // Attach click handlers after innerHTML is set (avoids inline onclick XSS issues)
-    const buttons = el.querySelectorAll('.uq-option');
-    const options = d.options || [];
+    const buttons = el.querySelectorAll('.uq-options > .uq-option');
     buttons.forEach((btn, i) => {
-        btn.addEventListener('click', () => answerQuestion(btn, options[i].label));
+        btn.addEventListener('click', () => answerQuestion(btn, opts[i].label));
+    });
+
+    // "Other" button: reveal the text input
+    const otherBtn = el.querySelector('.uq-other-btn');
+    const otherInputWrap = el.querySelector('.uq-other-input');
+    const otherText = el.querySelector('.uq-other-text');
+    const otherSubmit = el.querySelector('.uq-other-submit');
+
+    otherBtn.addEventListener('click', () => {
+        otherBtn.style.display = 'none';
+        otherInputWrap.style.display = 'flex';
+        otherText.focus();
+    });
+
+    otherSubmit.addEventListener('click', () => {
+        const val = otherText.value.trim();
+        if (val) answerQuestion(otherBtn, val);
+    });
+
+    otherText.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.isComposing) {
+            e.preventDefault();
+            const val = otherText.value.trim();
+            if (val) answerQuestion(otherBtn, val);
+        }
     });
 
     currentAssistantEl.appendChild(el);
@@ -290,13 +326,27 @@ function onUserQuestion(d) {
 }
 
 function answerQuestion(btn, answer) {
-    // Disable all option buttons in this question block
+    // Disable all option buttons and the "Other" input in this question block
     const block = btn.closest('.user-question-block');
     for (const b of block.querySelectorAll('.uq-option')) {
         b.disabled = true;
         b.classList.remove('selected');
     }
+    // Disable the free-text input if present
+    const otherText = block.querySelector('.uq-other-text');
+    const otherSubmit = block.querySelector('.uq-other-submit');
+    if (otherText) otherText.disabled = true;
+    if (otherSubmit) otherSubmit.disabled = true;
+
     btn.classList.add('selected');
+    // For "Other" answers, show the typed text as the selected label
+    if (btn.classList.contains('uq-other-btn')) {
+        btn.style.display = '';
+        const labelEl = btn.querySelector('.uq-option-label');
+        if (labelEl) labelEl.textContent = 'Other: ' + answer;
+        const inputWrap = block.querySelector('.uq-other-input');
+        if (inputWrap) inputWrap.style.display = 'none';
+    }
 
     // Send answer to backend
     if (ws && ws.readyState === WebSocket.OPEN) {
