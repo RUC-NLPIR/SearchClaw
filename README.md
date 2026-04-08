@@ -10,20 +10,22 @@
 
 ---
 
-SearchClaw is a self-hosted research agent with a web UI. Give it a question — it autonomously searches the web, reads pages, checks academic papers and news, and produces a well-cited answer with source links. It runs as a local FastAPI server you can access from your browser.
+SearchClaw is a self-hosted research agent with a web UI. Give it a question and it autonomously searches the web, reads pages, checks academic papers and news, and produces a well-cited answer with source links. It runs as a local FastAPI server you can access from your browser.
+
+For a detailed discussion of the system design, see the [Technical Report (PDF)](docs/technical_report.pdf).
 
 ## Features
 
-- **Agentic research loop** — autonomous multi-step research with search, fetch, read, and cite tools
-- **Multiple search sources** — web search (Google via Serper), academic papers (Semantic Scholar), news (NewsAPI / Google News RSS)
-- **Quality gates** — built-in hooks enforce citation minimums, source diversity, and answer completeness before finalizing
-- **Research planning** — automatic task decomposition for complex multi-part queries
-- **Interactive clarification** — the agent can ask you follow-up questions mid-research
-- **Context compaction** — automatic context window management for long research sessions
-- **Persistent memory** — learns from past sessions (source quality, user preferences, key facts)
-- **Browser integration** — optional Playwright/CDP support for JS-rendered pages and authenticated content
-- **Password protection** — optional password gate for remote deployments
-- **Multi-provider LLM support** — works with Anthropic, OpenAI, Google Gemini, and [many more](#supported-llm-providers) via [litellm](https://docs.litellm.ai/)
+- **Agentic research loop** -- autonomous multi-step research with search, fetch, read, and cite tools
+- **Multiple search sources** -- web search (Google via Serper), academic papers (Semantic Scholar), news (NewsAPI / Google News RSS)
+- **Quality gates** -- built-in hooks enforce citation minimums, source diversity, and answer completeness before finalizing
+- **Research planning** -- automatic task decomposition for complex multi-part queries
+- **Interactive clarification** -- the agent can ask you follow-up questions mid-research
+- **Context compaction** -- automatic context window management for long research sessions
+- **Persistent memory** -- learns from past sessions (source quality, user preferences, key facts)
+- **Browser integration** -- optional Playwright/CDP support for JS-rendered pages and authenticated content
+- **Password protection** -- optional password gate for remote deployments
+- **Multi-provider LLM support** -- works with Anthropic, OpenAI, Google Gemini, and [many more](#supported-llm-providers) via [litellm](https://docs.litellm.ai/)
 
 ## Quick Start
 
@@ -52,13 +54,13 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 # or
 export OPENAI_API_KEY="sk-..."
 
-# Web search (recommended — falls back to DuckDuckGo scraping without this)
+# Web search (recommended -- falls back to DuckDuckGo scraping without this)
 export SERPER_API_KEY="..."
 
-# Web fetch (recommended — falls back to direct HTTP without this)
+# Web fetch (recommended -- falls back to direct HTTP without this)
 export JINA_API_KEY="jina_..."
 
-# News search (optional — falls back to Google News RSS)
+# News search (optional -- falls back to Google News RSS)
 export NEWSAPI_KEY="..."
 ```
 
@@ -72,7 +74,7 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ## Configuration
 
-All settings are in [`config/settings.yaml`](config/settings.yaml). The file is heavily commented — see it for full documentation.
+All settings are in [`config/settings.yaml`](config/settings.yaml). The file is heavily commented; see it for full documentation.
 
 Key sections:
 
@@ -135,10 +137,10 @@ src/
 │   ├── context.py  # System prompt builder
 │   └── compact.py  # Context window compaction
 ├── tools/          # Research tools the agent can use
-│   ├── web_search.py       # Web search (Serper → DuckDuckGo fallback)
-│   ├── web_fetch.py        # Fetch & extract web pages (Jina → direct fetch)
+│   ├── web_search.py       # Web search (Serper -> DuckDuckGo fallback)
+│   ├── web_fetch.py        # Fetch & extract web pages (Jina -> direct fetch)
 │   ├── academic_search.py  # Academic paper search (Semantic Scholar)
-│   ├── news_search.py      # News search (NewsAPI → Google News RSS)
+│   ├── news_search.py      # News search (NewsAPI -> Google News RSS)
 │   ├── deep_read.py        # Read cached page sections
 │   ├── cite_source.py      # Register citations for the answer
 │   ├── research_plan.py    # Decompose complex queries into sub-tasks
@@ -158,7 +160,7 @@ src/
 │   ├── browser_search.py   # Browser-based search fallback
 │   ├── browser_fetch.py    # Browser-based page fetch
 │   ├── content_extractor.py # LLM-based content compression
-│   ├── html_to_markdown.py # HTML → markdown conversion
+│   ├── html_to_markdown.py # HTML -> markdown conversion
 │   ├── rate_limiter.py     # Per-domain rate limiting
 │   ├── session_storage.py  # Session persistence (JSON files)
 │   ├── token_counter.py    # Token counting (tiktoken)
@@ -173,8 +175,8 @@ src/
 
 1. You type a question in the web UI
 2. The question is sent to the server via WebSocket
-3. The **agentic loop** starts: the LLM reads the question + available tools
-4. The LLM decides which tools to call (search, fetch, cite, etc.) — tool calls run in parallel when possible
+3. The **agentic loop** starts: the LLM reads the question and the available tools
+4. The LLM decides which tools to call (search, fetch, cite, etc.), and tool calls run in parallel when possible
 5. Tool results are fed back to the LLM, which decides the next step
 6. When the LLM produces a final answer, **quality hooks** check it:
    - Enough citations? Diverse sources? Sufficient detail?
@@ -183,7 +185,7 @@ src/
 
 ## Supported LLM Providers
 
-SearchClaw supports any provider that litellm supports. Tested/common providers:
+SearchClaw supports any provider that litellm supports. Tested and commonly used providers:
 
 | Provider | Prefix | Example model | API key env var |
 |----------|--------|---------------|-----------------|
@@ -213,24 +215,11 @@ browser:
 
 **Playwright mode** (default): launches a managed Chromium instance. Good for JS-rendered pages.
 
-**CDP mode**: connects to your running Chrome via DevTools Protocol — inherits your cookies, extensions, and logins. Best for authenticated content (Twitter, LinkedIn, etc.).
+**CDP mode**: connects to your running Chrome via DevTools Protocol, inheriting your cookies, extensions, and logins. Best for authenticated content (Twitter, LinkedIn, etc.).
 
 ```bash
 # Launch Chrome with CDP enabled
 google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/chrome-cdp-profile"
-```
-
-## Development
-
-```bash
-# Install with dev dependencies
-pip install -e '.[dev]'
-
-# Run tests
-pytest tests/
-
-# Run with auto-reload
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ## License
