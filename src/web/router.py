@@ -451,13 +451,29 @@ def create_app() -> FastAPI:
 
                 # Accept session_id from client (for reconnect continuity)
                 client_session_id = options.get("session_id", "")
-                if client_session_id and session_id is None:
+                if client_session_id and session_id != client_session_id:
                     session_id = client_session_id
-                    # Restore turns from saved session file
+                    # Restore turns and conversation history from saved session
                     saved = session_storage.load_session(session_id)
                     if saved and "turns" in saved:
                         session_turns = saved["turns"]
-                        logger.info(f"Resumed session [{session_id[:8]}] with {len(session_turns)} prior turns")
+                        # Rebuild conversation_history from saved turns
+                        # so the LLM has context from prior exchanges
+                        conversation_history.clear()
+                        for turn in session_turns:
+                            if turn.get("query"):
+                                conversation_history.append(
+                                    Message(role="user", content=turn["query"])
+                                )
+                            if turn.get("final_answer"):
+                                conversation_history.append(
+                                    Message(role="assistant", content=turn["final_answer"])
+                                )
+                        logger.info(
+                            f"Resumed session [{session_id[:8]}] with "
+                            f"{len(session_turns)} prior turns, "
+                            f"{len(conversation_history)} history messages"
+                        )
 
                 # Generate new session_id if still unset (first query, no client id)
                 if session_id is None:
