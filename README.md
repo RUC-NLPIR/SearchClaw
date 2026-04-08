@@ -12,6 +12,8 @@
 
 SearchClaw is a self-hosted research agent with a web UI. Give it a question and it autonomously searches the web, reads pages, checks academic papers and news, and produces a well-cited answer with source links. It runs as a local FastAPI server you can access from your browser.
 
+The design draws inspiration from harness engineering principles seen in tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), where the scaffolding around the model is just as important as the model itself. Rather than relying on a single prompt to produce good answers, SearchClaw wraps the LLM in a structured harness: quality gate hooks reject answers that lack sufficient citations or source diversity, a research plan tool decomposes complex queries into trackable sub-tasks, two-phase context compaction keeps long sessions within the context window, each tool injects its own usage guidelines into the system prompt, and a persistent memory system carries learned facts and preferences across sessions. These mechanisms work together to make the agent more reliable and thorough than prompting alone would allow.
+
 For a detailed discussion of the system design, see the [Technical Report (PDF)](docs/technical_report.pdf).
 
 ## Features
