@@ -378,8 +378,8 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
             "compaction_count": state.compaction_count,
             "session_summary": {
                 "query": params.query,
-                "final_answer": final_answer[:2000],
-                "plan_findings": plan_findings[:1000],
+                "final_answer": final_answer,
+                "plan_findings": plan_findings,
             },
             # Condensed history for the next turn's conversation continuity.
             # Serialized to dicts so the DONE event is JSON-serializable
