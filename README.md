@@ -20,12 +20,12 @@ For a detailed discussion of the system design, see the [Technical Report (PDF)]
 
 - **Agentic research loop** -- autonomous multi-step research with search, fetch, read, and cite tools
 - **Multiple search sources** -- web search (Google via Serper), academic papers (Semantic Scholar), news (NewsAPI / Google News RSS)
-- **Quality gates** -- built-in hooks enforce citation minimums, source diversity, and answer completeness before finalizing
-- **Research planning** -- automatic task decomposition for complex multi-part queries
+- **Browser integration** -- optional Playwright/CDP support for JS-rendered pages and authenticated content
 - **Interactive clarification** -- the agent can ask you follow-up questions mid-research
+- **Research planning** -- automatic task decomposition for complex multi-part queries
+- **Quality gates** -- built-in hooks enforce citation minimums, source diversity, and answer completeness before finalizing
 - **Context compaction** -- automatic context window management for long research sessions
 - **Persistent memory** -- learns from past sessions (source quality, user preferences, key facts)
-- **Browser integration** -- optional Playwright/CDP support for JS-rendered pages and authenticated content
 - **Password protection** -- optional password gate for remote deployments
 - **Multi-provider LLM support** -- works with Anthropic, OpenAI, Google Gemini, and [many more](#supported-llm-providers) via [litellm](https://docs.litellm.ai/)
 
