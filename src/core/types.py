@@ -296,6 +296,8 @@ class LoopState:
     turn_count: int = 0
     citations: list[Citation] = field(default_factory=list)
     compaction_count: int = 0
+    search_count: int = 0  # Number of search tool calls (web, academic, news)
+    fetch_count: int = 0   # Number of web_fetch tool calls
     # Structured research plan (set by research_plan tool)
     research_plan: ResearchPlan | None = None
 

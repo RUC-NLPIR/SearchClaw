@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 # Suppress litellm's verbose logging
 litellm.suppress_debug_info = True
+# Automatically drop unsupported params per model (e.g., max_tokens vs
+# max_completion_tokens) instead of raising errors.
+litellm.drop_params = True
 
 
 def _is_retryable(error: Exception) -> bool:
@@ -162,6 +165,7 @@ class LLMClient:
                     "model": target_model,
                     "messages": api_messages,
                     "max_tokens": target_max_tokens,
+                    "max_completion_tokens": target_max_tokens,
                     "stream": True,
                     "stream_options": {"include_usage": True},
                 }
@@ -310,6 +314,7 @@ async def side_query(
         "model": target_model,
         "messages": messages,
         "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
     }
     if system:
         kwargs["messages"] = [{"role": "system", "content": system}] + messages

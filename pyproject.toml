@@ -26,6 +26,9 @@ dev = [
 browser = [
     "playwright>=1.49",
 ]
+wechat = [
+    "lxml>=5.0",
+]
 
 [build-system]
 requires = ["hatchling"]

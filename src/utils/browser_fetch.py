@@ -19,13 +19,27 @@ The extraction strategy:
 from __future__ import annotations
 
 import logging
+import random
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
     from src.utils.browser_manager import BrowserManager
 
 logger = logging.getLogger(__name__)
+
+# Domains that require special anti-detection handling
+_WECHAT_DOMAINS = {"mp.weixin.qq.com", "weixin.qq.com"}
+
+
+def _is_wechat_url(url: str) -> bool:
+    """Check if a URL is a WeChat/公众号 page."""
+    try:
+        host = urlparse(url).hostname or ""
+        return host in _WECHAT_DOMAINS
+    except Exception:
+        return False
 
 
 async def browser_fetch(
@@ -74,21 +88,31 @@ async def _fetch_page_content(
     Uses a multi-strategy approach:
     1. Navigate with networkidle wait (handles SPAs)
     2. Extract via article selectors → body text fallback → raw HTML
+
+    For WeChat (mp.weixin.qq.com) pages, uses special handling:
+    - Sets a referrer to appear as a natural click
+    - Waits longer for JS-rendered content
+    - Uses WeChat-specific DOM selectors
     """
-    # Navigate to the page
+    is_wechat = _is_wechat_url(url)
+
+    # Navigate to the page — WeChat pages need a referrer to avoid blocks
+    goto_kwargs: dict = {"wait_until": "networkidle", "timeout": timeout}
+    if is_wechat:
+        goto_kwargs["referer"] = "https://weixin.sogou.com/"
+
     try:
-        response = await page.goto(
-            url, wait_until="networkidle", timeout=timeout
-        )
-    except Exception as e:
+        response = await page.goto(url, **goto_kwargs)
+    except Exception:
         # networkidle can be slow — retry with domcontentloaded
         logger.debug(
             f"networkidle timeout for {url}, retrying with domcontentloaded"
         )
+        retry_kwargs: dict = {"wait_until": "domcontentloaded", "timeout": timeout}
+        if is_wechat:
+            retry_kwargs["referer"] = "https://weixin.sogou.com/"
         try:
-            response = await page.goto(
-                url, wait_until="domcontentloaded", timeout=timeout
-            )
+            response = await page.goto(url, **retry_kwargs)
         except Exception as e2:
             logger.warning(f"Browser navigation failed for {url}: {e2}")
             return None
@@ -105,8 +129,24 @@ async def _fetch_page_content(
     # Get page title
     title = await page.title() or "Untitled Page"
 
-    # Allow a brief moment for lazy-loaded content
-    await page.wait_for_timeout(800)
+    # Human-like delay — random wait before extracting content.
+    # WeChat and other anti-bot sites check for instant extraction.
+    delay_ms = random.randint(1500, 3000) if is_wechat else 800
+    await page.wait_for_timeout(delay_ms)
+
+    # --- WeChat-specific extraction ---
+    if is_wechat:
+        content = await _extract_wechat_content(page)
+        if content and len(content) >= 100:
+            return {"title": title, "content": content, "url": url}
+        # If WeChat extraction failed, check for captcha
+        page_text = await page.evaluate("() => document.body?.innerText || ''")
+        if any(kw in page_text for kw in ["验证", "请完成", "安全验证", "captcha"]):
+            logger.warning(
+                f"Browser fetch: WeChat captcha detected for {url}. "
+                f"Consider using CDP mode with your real Chrome profile."
+            )
+            return None
 
     # --- Strategy 1: Extract from article/main container ---
     content = await page.evaluate("""() => {
@@ -185,3 +225,39 @@ async def _fetch_page_content(
 
     logger.info(f"Browser fetch: insufficient content from {url}")
     return None
+
+
+async def _extract_wechat_content(page: Page) -> str | None:
+    """
+    Extract article content from a WeChat (mp.weixin.qq.com) page.
+
+    WeChat articles use specific DOM IDs/classes that differ from
+    standard article selectors. Tries multiple known selectors.
+    """
+    content = await page.evaluate("""() => {
+        // WeChat article content selectors, ordered by specificity
+        const selectors = [
+            '#js_content',                // Primary article body
+            '.rich_media_content',        // Rich media content wrapper
+            '#js_article',                // Article container
+            '.rich_media_area_primary',   // Primary content area
+            '#page-content',              // Page content fallback
+        ];
+
+        for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el && el.innerText && el.innerText.trim().length > 100) {
+                return el.innerText.trim();
+            }
+        }
+
+        // Fallback: try to get the article title + content together
+        const title = document.querySelector('#activity-name, .rich_media_title');
+        const body = document.querySelector('#js_content, .rich_media_content');
+        if (title && body) {
+            return title.innerText.trim() + '\\n\\n' + body.innerText.trim();
+        }
+
+        return null;
+    }""")
+    return content

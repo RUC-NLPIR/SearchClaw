@@ -46,6 +46,8 @@ _memory_base_dir = "./memory"
 _memory_enabled = True
 _max_relevant_memories = 5
 _default_max_turns = 20
+_default_max_search = 20
+_default_max_fetch = 20
 _compact_threshold_tokens = 80000
 _rate_limit_per_domain = 10
 # Tools config
@@ -92,6 +94,8 @@ try:
         _max_relevant_memories = int(_memory_cfg.get("max_relevant_memories", 5))
         _limits = _settings.get("limits", {})
         _default_max_turns = int(_limits.get("max_turns", 20))
+        _default_max_search = int(_limits.get("max_search", 20))
+        _default_max_fetch = int(_limits.get("max_fetch", 20))
         _compact_threshold_tokens = int(_limits.get("compact_threshold_tokens", 80000))
         _rate_limit_per_domain = int(_limits.get("rate_limit_per_domain", 10))
         # Tools config
@@ -367,6 +371,125 @@ def create_app() -> FastAPI:
             status_code=404,
         )
 
+    @app.post("/api/query")
+    async def api_query(request: Request):
+        """
+        Synchronous REST API for benchmark testing.
+
+        Accepts a query, runs the full agentic loop, and returns the
+        completed answer as JSON. The ask_user tool is handled
+        non-interactively by auto-selecting the first option.
+
+        Request:  {"query": "...", "max_turns": 20}
+        Response: {"answer": "...", "citations": [...], "turn_count": N, "session_id": "..."}
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+
+        query = body.get("query", "").strip()
+        if not query:
+            return JSONResponse(status_code=400, content={"error": "Query is required"})
+        if len(query) > _max_query_length:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Query too long ({len(query)} chars). Maximum is {_max_query_length}."},
+            )
+
+        max_turns = body.get("max_turns", _default_max_turns)
+        max_search = body.get("max_search", _default_max_search)
+        max_fetch = body.get("max_fetch", _default_max_fetch)
+        session_id = str(uuid.uuid4())
+
+        # Load relevant memories
+        memory_content = None
+        if _memory_enabled:
+            try:
+                relevant_memories = await find_relevant_memories(
+                    query, memory_store, max_memories=_max_relevant_memories
+                )
+                memory_content = format_memories_for_prompt(relevant_memories)
+            except Exception as e:
+                logger.warning(f"Memory retrieval failed (API): {e}")
+
+        # Build system prompt
+        system_prompt = context_builder.build_system_prompt(
+            tools=tool_registry.all_tools(),
+            memory_content=memory_content,
+        )
+
+        params = QueryParams(
+            query=query,
+            system_prompt=system_prompt,
+            tool_registry=tool_registry,
+            llm_client=llm_client,
+            max_turns=max_turns,
+            max_search=max_search,
+            max_fetch=max_fetch,
+            compact_threshold_tokens=_compact_threshold_tokens,
+            session_id=session_id,
+            hook_engine=hook_engine,
+            rate_limiter=rate_limiter,
+            cache_dir=_cache_dir,
+        )
+
+        # Run the agentic loop, collecting results non-interactively
+        answer = ""
+        citations_list = []
+        turn_count = 0
+        gen = query_loop(params)
+        sent_value: str | None = None
+
+        try:
+            while True:
+                event = await gen.asend(sent_value)
+                sent_value = None
+
+                if event.type == EventType.USER_QUESTION:
+                    # Auto-select the first option (non-interactive mode)
+                    options = event.data.get("options", [])
+                    sent_value = options[0]["label"] if options else ""
+                    logger.info(
+                        f"API auto-answered question [{session_id[:8]}]: "
+                        f"{sent_value}"
+                    )
+
+                elif event.type == EventType.DONE:
+                    summary = event.data.get("session_summary", {})
+                    answer = summary.get("final_answer", "")
+                    citations_list = event.data.get("citations", [])
+                    turn_count = event.data.get("turn_count", 0)
+
+        except StopAsyncIteration:
+            pass
+        except Exception as e:
+            logger.error(f"API query error [{session_id[:8]}]: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Research failed: {str(e)}"},
+            )
+
+        # Save session for history
+        try:
+            session_storage.save_session(session_id, {
+                "query": query,
+                "turns": [{"query": query, "final_answer": answer, "turn_count": turn_count, "num_citations": len(citations_list)}],
+                "final_answer": answer,
+                "turn_count": turn_count,
+                "num_citations": len(citations_list),
+                "citations": citations_list,
+            })
+        except Exception as e:
+            logger.warning(f"Failed to save API session: {e}")
+
+        return {
+            "answer": answer,
+            "citations": citations_list,
+            "turn_count": turn_count,
+            "session_id": session_id,
+        }
+
     @app.websocket("/ws/search")
     async def search_websocket(ws: WebSocket):
         """
@@ -520,6 +643,8 @@ def create_app() -> FastAPI:
                     llm_client=llm_client,
                     history=list(conversation_history),  # Copy to avoid mutation
                     max_turns=max_turns,
+                    max_search=_default_max_search,
+                    max_fetch=_default_max_fetch,
                     compact_threshold_tokens=_compact_threshold_tokens,
                     session_id=session_id,
                     hook_engine=hook_engine,

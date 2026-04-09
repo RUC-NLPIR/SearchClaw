@@ -256,6 +256,15 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
     except ImportError:
         logger.info("News search tool not available (missing dependencies)")
 
+    try:
+        from src.tools.wechat_search import WeChatSearchTool
+        registry.register(WeChatSearchTool(
+            http_timeout=cfg.get("http_timeout", 15),
+            max_result_size_chars=cfg.get("max_result_size_chars", 30000),
+        ))
+    except ImportError:
+        logger.info("WeChat search tool not available (missing lxml)")
+
     # --- Browser integration (optional) ---
     # Wire up BrowserManager to web_search and web_fetch tools when enabled.
     # The browser is NOT a separate tool — it's a backend fallback within

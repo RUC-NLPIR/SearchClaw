@@ -58,6 +58,8 @@ class QueryParams:
 
     # Guards
     max_turns: int = 20
+    max_search: int = 20  # Max search tool calls (web, academic, news)
+    max_fetch: int = 20   # Max web_fetch tool calls
 
     # Compaction
     compact_threshold_tokens: int = 80000
@@ -120,6 +122,25 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
                 data={"message": f"Reached maximum turns ({params.max_turns}). Synthesizing final answer..."},
             )
             # Give the LLM one last chance to answer (no tools)
+            async for ev in _final_answer(state, params):
+                yield ev
+            break
+
+        # --- Guard: per-tool limits ---
+        if state.search_count >= params.max_search:
+            yield StreamEvent(
+                type=EventType.STATUS,
+                data={"message": f"Reached search limit ({params.max_search}). Synthesizing final answer..."},
+            )
+            async for ev in _final_answer(state, params):
+                yield ev
+            break
+
+        if state.fetch_count >= params.max_fetch:
+            yield StreamEvent(
+                type=EventType.STATUS,
+                data={"message": f"Reached fetch limit ({params.max_fetch}). Synthesizing final answer..."},
+            )
             async for ev in _final_answer(state, params):
                 yield ev
             break
@@ -252,23 +273,52 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
             break
 
         # --- Execute tool calls ---
+        # Filter out tool calls that would exceed per-tool limits.
+        # The LLM may issue multiple tool calls in one turn, so we must
+        # enforce limits per-call, not just per-turn.
+        allowed_tool_calls: list[dict] = []
+        skipped_tool_calls: list[dict] = []
+        _pending_search = state.search_count
+        _pending_fetch = state.fetch_count
+        for tc in tool_calls:
+            name = tc["tool_name"]
+            if name in ("web_search", "academic_search", "news_search"):
+                if _pending_search >= params.max_search:
+                    skipped_tool_calls.append(tc)
+                    continue
+                _pending_search += 1
+            elif name == "web_fetch":
+                if _pending_fetch >= params.max_fetch:
+                    skipped_tool_calls.append(tc)
+                    continue
+                _pending_fetch += 1
+            allowed_tool_calls.append(tc)
+
         yield StreamEvent(
             type=EventType.STATUS,
-            data={"message": f"Executing {len(tool_calls)} tool(s)..."},
+            data={"message": f"Executing {len(allowed_tool_calls)} tool(s)..."},
         )
 
         tool_results = await _execute_tools(
-            tool_calls=tool_calls,
+            tool_calls=allowed_tool_calls,
             registry=params.tool_registry,
             state=state,
             params=params,
             concurrent_safe=concurrent_safe,
         )
 
+        # Add "limit reached" results for skipped tool calls
+        for tc in skipped_tool_calls:
+            tool_results.append(ToolResult(
+                data=f"{tc['tool_name']} limit reached. Please provide your final answer based on the information gathered.",
+                is_error=False,
+            ))
+            allowed_tool_calls.append(tc)  # re-add so zip() below pairs correctly
+
         # --- Inject tool results into conversation ---
         # For OpenAI-compatible APIs, tool results go as separate messages
         # with role="tool" and the tool_call_id
-        for tc, result in zip(tool_calls, tool_results):
+        for tc, result in zip(allowed_tool_calls, tool_results):
             # Handle interactive tool (ask_user) — yield question to
             # the caller and receive the user's answer via asend().
             pending = result.metadata.get("pending_question")
@@ -307,6 +357,13 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
                     "tool_name": tc["tool_name"],
                 },
             ))
+
+            # Track per-tool counts for limit guards
+            tool_name = tc["tool_name"]
+            if tool_name in ("web_search", "academic_search", "news_search"):
+                state.search_count += 1
+            elif tool_name == "web_fetch":
+                state.fetch_count += 1
 
             # Accumulate citations
             for citation in result.citations:
@@ -548,13 +605,26 @@ async def _final_answer(
     clean_messages.append({"role": "user", "content": synthesis_msg})
 
     try:
+        final_text_parts: list[str] = []
         async for event in params.llm_client.stream(
             messages=clean_messages,
             system_prompt=params.system_prompt,
             tools=None,  # No tools — force a text-only response
             max_tokens=params.llm_client.config.max_tokens,
         ):
+            if event.type == EventType.TEXT_DELTA:
+                final_text_parts.append(event.data.get("text", ""))
             yield event
+
+        # Append the synthesized answer to state so that
+        # state.last_assistant_message reflects the final answer,
+        # not the mid-research reasoning that preceded the guard.
+        final_text = "".join(final_text_parts)
+        if final_text.strip():
+            state.messages.append(Message(
+                role="assistant",
+                content=final_text,
+            ))
     except Exception as e:
         logger.error(f"Final answer LLM error: {e}")
         yield StreamEvent(
