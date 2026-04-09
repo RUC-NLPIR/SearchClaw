@@ -366,15 +366,16 @@ function copyResponseMarkdown(assistantEl, btn) {
     }
     if (!markdown) return;
 
-    navigator.clipboard.writeText(markdown).then(() => {
+    function doCopyFeedback() {
         btn.classList.add('copied');
         btn.querySelector('span').textContent = 'Copied';
         setTimeout(() => {
             btn.classList.remove('copied');
             btn.querySelector('span').textContent = 'Copy';
         }, 2000);
-    }).catch(() => {
-        // Fallback for older browsers / non-HTTPS
+    }
+
+    function fallbackCopy() {
         const ta = document.createElement('textarea');
         ta.value = markdown;
         ta.style.cssText = 'position:fixed;left:-9999px';
@@ -382,13 +383,16 @@ function copyResponseMarkdown(assistantEl, btn) {
         ta.select();
         document.execCommand('copy');
         document.body.removeChild(ta);
-        btn.classList.add('copied');
-        btn.querySelector('span').textContent = 'Copied';
-        setTimeout(() => {
-            btn.classList.remove('copied');
-            btn.querySelector('span').textContent = 'Copy';
-        }, 2000);
-    });
+        doCopyFeedback();
+    }
+
+    // Clipboard API only works in secure contexts (HTTPS / localhost).
+    // Fall back to execCommand('copy') on plain HTTP.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(markdown).then(doCopyFeedback).catch(fallbackCopy);
+    } else {
+        fallbackCopy();
+    }
 }
 
 // ── Submission ──
