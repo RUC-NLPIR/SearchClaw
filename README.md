@@ -19,7 +19,7 @@ For a detailed discussion of the system design, see the [Technical Report (PDF)]
 ## Features
 
 - **Agentic research loop** -- autonomous multi-step research with search, fetch, read, and cite tools
-- **Multiple search sources** -- web search (Google via Serper), academic papers (Semantic Scholar), news (NewsAPI / Google News RSS)
+- **Multiple search sources** -- web search (Google via Serper), academic papers (Semantic Scholar), news (NewsAPI / Google News RSS), and wechat articles
 - **Browser integration** -- optional Playwright/CDP support for JS-rendered pages and authenticated content
 - **Interactive clarification** -- the agent can ask you follow-up questions mid-research
 - **Research planning** -- automatic task decomposition for complex multi-part queries
