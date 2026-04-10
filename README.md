@@ -16,11 +16,7 @@ The design draws inspiration from **harness engineering** principles seen in too
 
 For a detailed discussion of the system design, see the [Technical Report (PDF)](report/SearchClaw.pdf).
 
-<p align="center">
-  <a href="report/demo.mp4">
-    <img src="https://img.shields.io/badge/Watch%20Demo-Video-blue?style=for-the-badge&logo=youtube" alt="Watch Demo Video">
-  </a>
-</p>
+https://github.com/user-attachments/assets/c9598751-da53-4e12-955d-870c9ff86b28
 
 ## Features
 
