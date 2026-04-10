@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-settings>=2.5.0",
     "pyyaml>=6.0",
     "aiolimiter>=1.1.0",
+    "lxml>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -25,9 +26,6 @@ dev = [
 ]
 browser = [
     "playwright>=1.49",
-]
-wechat = [
-    "lxml>=5.0",
 ]
 
 [build-system]

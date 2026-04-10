@@ -262,8 +262,8 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
             http_timeout=cfg.get("http_timeout", 15),
             max_result_size_chars=cfg.get("max_result_size_chars", 30000),
         ))
-    except ImportError:
-        logger.info("WeChat search tool not available (missing lxml)")
+    except Exception:
+        logger.warning("WeChat search tool failed to initialize", exc_info=True)
 
     # --- Browser integration (optional) ---
     # Wire up BrowserManager to web_search and web_fetch tools when enabled.

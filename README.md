@@ -16,6 +16,12 @@ The design draws inspiration from **harness engineering** principles seen in too
 
 For a detailed discussion of the system design, see the [Technical Report (PDF)](report/SearchClaw.pdf).
 
+<p align="center">
+  <a href="report/demo.mp4">
+    <img src="https://img.shields.io/badge/Watch%20Demo-Video-blue?style=for-the-badge&logo=youtube" alt="Watch Demo Video">
+  </a>
+</p>
+
 ## Features
 
 - **Agentic research loop** -- autonomous multi-step research with search, fetch, read, and cite tools
@@ -143,6 +149,7 @@ src/
 │   ├── web_fetch.py        # Fetch & extract web pages (Jina -> direct fetch)
 │   ├── academic_search.py  # Academic paper search (Semantic Scholar)
 │   ├── news_search.py      # News search (NewsAPI -> Google News RSS)
+│   ├── wechat_search.py    # WeChat article search (Sogou -> mp.weixin.qq.com)
 │   ├── deep_read.py        # Read cached page sections
 │   ├── cite_source.py      # Register citations for the answer
 │   ├── research_plan.py    # Decompose complex queries into sub-tasks
