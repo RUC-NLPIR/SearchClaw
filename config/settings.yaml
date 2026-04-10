@@ -44,7 +44,7 @@ llm:
   # Fallback model if primary is unavailable
   fallback_model: "anthropic/claude-sonnet-4-20250514"
   # Maximum output tokens per LLM call
-  max_tokens: 16384
+  max_tokens: 128000
 
   # Optional: base URL for the LLM API.
   # Use this to point at a custom/local endpoint (e.g. vLLM, Ollama, LiteLLM proxy, Azure).
@@ -67,6 +67,18 @@ llm:
 limits:
   # Maximum turns in the agentic loop before forcing a stop
   max_turns: 50
+  # Token threshold to trigger context compaction
+  compact_threshold_tokens: 80000
+  # Rate limit: max requests per domain per minute
+  rate_limit_per_domain: 50
+
+limits:
+  # Maximum turns in the agentic loop before forcing a stop
+  max_turns: 100
+  # Maximum search tool calls (web_search, academic_search, news_search)
+  max_search: 30
+  # Maximum web_fetch tool calls
+  max_fetch: 30
   # Token threshold to trigger context compaction
   compact_threshold_tokens: 80000
   # Rate limit: max requests per domain per minute
