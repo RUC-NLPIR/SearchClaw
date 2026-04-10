@@ -4,6 +4,9 @@ memory/
 cache/
 browser_data/
 
+# Config (user-specific)
+config/settings.yaml
+
 # Tests and docs (not published)
 tests/
 docs/

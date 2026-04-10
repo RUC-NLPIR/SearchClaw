@@ -82,7 +82,7 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ## Configuration
 
-All settings are in [`config/settings.yaml`](config/settings.yaml). The file is heavily commented; see it for full documentation.
+All settings are in [`config/settings.yaml`](config/settings.example.yaml). The file is heavily commented; see it for full documentation.
 
 Key sections:
 

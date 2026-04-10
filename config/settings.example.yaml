@@ -38,11 +38,12 @@ llm:
   # an OpenAI-compatible API, use the "openai/" prefix:
   #   "openai/claude-sonnet-4.6"    — routes through OpenAI-compatible format
   # The part after the prefix is the model name sent in the API request body.
-  default_model: "anthropic/claude-sonnet-4-20250514"
+  # default_model: "anthropic/claude-opus-4.6"
+  default_model: "anthropic/claude-opus-4.6"
   # Cheap model for side-queries (ranking, relevance, quality checks)
-  side_query_model: "anthropic/claude-haiku-3-20250305"
+  side_query_model: "anthropic/claude-sonnet-4.6"
   # Fallback model if primary is unavailable
-  fallback_model: "anthropic/claude-sonnet-4-20250514"
+  fallback_model: "anthropic/claude-sonnet-4.6"
   # Maximum output tokens per LLM call
   max_tokens: 128000
 
@@ -54,7 +55,7 @@ llm:
   #   "http://localhost:8000/v1"         — vLLM / LiteLLM proxy
   #   "https://my-azure.openai.azure.com" — Azure OpenAI
   # Leave blank or omit to use the provider's default endpoint.
-  base_url: ""
+  base_url: "http://localhost:4141"
 
   # Optional: separate base URL for the side-query model.
   # If blank, falls back to the main base_url above.
@@ -66,7 +67,11 @@ llm:
 
 limits:
   # Maximum turns in the agentic loop before forcing a stop
-  max_turns: 50
+  max_turns: 100
+  # Maximum search tool calls (web_search, academic_search, news_search)
+  max_search: 30
+  # Maximum web_fetch tool calls
+  max_fetch: 30
   # Token threshold to trigger context compaction
   compact_threshold_tokens: 80000
   # Rate limit: max requests per domain per minute
@@ -139,7 +144,7 @@ browser:
   #
   # Browser fetch works in both modes — Playwright mode handles JS-rendered
   # pages, CDP mode additionally handles auth-walled pages (Twitter, etc.).
-  use_for_search: true     # Browser as fallback in web_search chain (CDP only)
+  use_for_search: false     # Browser as fallback in web_search chain (CDP only)
   use_for_fetch: true      # Browser as fallback in web_fetch chain (both modes)
   # Connection mode:
   #   "playwright" — launches Playwright's managed Chromium (default, no setup needed)
