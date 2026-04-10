@@ -13,10 +13,15 @@
 #                                             # Without this, falls back to DuckDuckGo HTML scraping 
 #                                             # (less reliable, may break if DDG changes HTML)
 #
-#   # ── Web Fetch (RECOMMENDED) ──
+#   # ── Web Fetch (OPTIONAL) ──
 #   export JINA_API_KEY="jina_..."            # Jina Reader API (r.jina.ai)
-#                                             # Without this, falls back to direct HTTP fetch
-#                                             # (can't handle JS-heavy pages or PDFs)
+#                                             # Without this, Jina still works in free mode
+#                                             # (20 RPM rate limit). Set for 200 RPM.
+#
+#   # ── Exa Search (OPTIONAL) ──
+#   export EXA_API_KEY="..."                  # Exa semantic web search (exa.ai)
+#                                             # Without this, uses Exa MCP endpoint directly
+#                                             # (rate-limited). Set for higher limits.
 #
 #   # ── News Search (OPTIONAL) ──
 #   export NEWSAPI_KEY="..."                  # newsapi.org — recent news articles
@@ -106,6 +111,9 @@ tools:
   # News search: how many days back to search by default
   news_search_default_days_back: 7
   news_search_max_days_back: 30
+  # Exa search: default and max results
+  exa_search_default_results: 10
+  exa_search_max_results: 20
   # Max chars per tool result before caching to disk
   max_result_size_chars: 20000
   # HTTP timeout (seconds) for tool API calls (search, fetch, etc.)

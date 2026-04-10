@@ -59,6 +59,8 @@ _news_search_default_results = 5
 _news_search_max_results = 10
 _news_search_default_days_back = 7
 _news_search_max_days_back = 30
+_exa_search_default_results = 10
+_exa_search_max_results = 20
 _max_result_size_chars = 50000
 _http_timeout = 30
 _jina_timeout = 60
@@ -108,6 +110,8 @@ try:
         _news_search_max_results = int(_tools_cfg.get("news_search_max_results", 10))
         _news_search_default_days_back = int(_tools_cfg.get("news_search_default_days_back", 7))
         _news_search_max_days_back = int(_tools_cfg.get("news_search_max_days_back", 30))
+        _exa_search_default_results = int(_tools_cfg.get("exa_search_default_results", 10))
+        _exa_search_max_results = int(_tools_cfg.get("exa_search_max_results", 20))
         _max_result_size_chars = int(_tools_cfg.get("max_result_size_chars", 50000))
         _http_timeout = int(_tools_cfg.get("http_timeout", 30))
         _jina_timeout = int(_tools_cfg.get("jina_timeout", 60))
@@ -153,6 +157,8 @@ tool_registry = build_default_registry(config={
     "news_search_max_results": _news_search_max_results,
     "news_search_default_days_back": _news_search_default_days_back,
     "news_search_max_days_back": _news_search_max_days_back,
+    "exa_search_default_results": _exa_search_default_results,
+    "exa_search_max_results": _exa_search_max_results,
     "max_result_size_chars": _max_result_size_chars,
     "http_timeout": _http_timeout,
     "jina_timeout": _jina_timeout,
