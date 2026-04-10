@@ -1,8 +1,8 @@
 # Runtime data — generated during research sessions
-sessions/
-memory/
-cache/
-browser_data/
+/sessions/
+/memory/
+/cache/
+/browser_data/
 
 # Tests and docs (not published)
 tests/
