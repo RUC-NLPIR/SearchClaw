@@ -145,7 +145,7 @@ src/
 │   ├── web_fetch.py        # Fetch & extract web pages (Jina -> direct fetch)
 │   ├── academic_search.py  # Academic paper search (Semantic Scholar)
 │   ├── news_search.py      # News search (NewsAPI -> Google News RSS)
-│   ├── wechat_search.py    # WeChat article search (Sogou -> mp.weixin.qq.com)
+│   ├── wechat_search.py    # WeChat article search
 │   ├── deep_read.py        # Read cached page sections
 │   ├── cite_source.py      # Register citations for the answer
 │   ├── research_plan.py    # Decompose complex queries into sub-tasks
