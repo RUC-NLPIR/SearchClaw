@@ -31,6 +31,22 @@ https://github.com/user-attachments/assets/c9598751-da53-4e12-955d-870c9ff86b28
 - **Password protection** -- optional password gate for remote deployments
 - **Multi-provider LLM support** -- works with Anthropic, OpenAI, Google Gemini, and [many more](#supported-llm-providers) via [litellm](https://docs.litellm.ai/)
 
+## Benchmark Results
+
+We evaluate SearchClaw on the first 50 questions of [BrowseComp](https://openai.com/index/browsecomp/) (OpenAI, 2025), a benchmark of 1,266 questions designed to test the ability of AI agents to browse the web and find hard-to-locate information.
+
+| System | Model | Reasoning Effort | Accuracy | Avg Turns | Avg Searches | Avg Fetches | Avg Time | Refusals |
+|--------|-------|-----------------|----------|-----------|-------------|-------------|----------|----------|
+| ReAct baseline | GPT-5.4 (via Azure) | xhigh | 54.0% (27/50) | 46.3 | 37.9 | 27.5 | 9.5 min | 7 |
+| **SearchClaw** | GPT-5.4 (via Azure) | xhigh | **74.0%** (37/50) | 40.2 | 45.5 | 26.2 | 10.2 min | 5 |
+
+The ReAct baseline is a plain ReAct loop with the same `web_search` and `web_fetch` tools but no harness engineering — no quality hooks, research planning, content extraction, context compaction, or memory. SearchClaw's structured harness achieves a **+20 percentage point improvement** over the baseline.
+
+**Experiment setup:**
+- For fair comparison, SearchClaw disabled all search tools except `web_search` (i.e., `academic_search`, `news_search`, and `wechat_search` were removed), matching the ReAct baseline's tool set.
+- Both systems were limited to a maximum of 50 search calls and 50 fetch calls per question. Once a limit is reached, the tool returns a dummy message prompting the agent to synthesize its final answer.
+- The GPT-5.4 service on Microsoft Azure exhibits occasional refusals due to its content filtering. All refused questions were retried once.
+
 ## Quick Start
 
 ### 1. Install
@@ -207,22 +223,6 @@ SearchClaw supports any provider that litellm supports. Tested and commonly used
 For providers without a dedicated litellm prefix (Kimi, Mimo, etc.), use the `openai/` prefix with a custom `base_url` pointing to their OpenAI-compatible endpoint.
 
 See [litellm docs](https://docs.litellm.ai/docs/providers) for the full provider list.
-
-## Benchmark Results
-
-We evaluate SearchClaw on the first 50 questions of [BrowseComp](https://openai.com/index/browsecomp/) (OpenAI, 2025), a benchmark of 1,266 questions designed to test the ability of AI agents to browse the web and find hard-to-locate information.
-
-| System | Model | Reasoning Effort | Accuracy | Avg Turns | Avg Searches | Avg Fetches | Avg Time | Refusals |
-|--------|-------|-----------------|----------|-----------|-------------|-------------|----------|----------|
-| ReAct baseline | GPT-5.4 (via Azure) | xhigh | 54.0% (27/50) | 46.3 | 37.9 | 27.5 | 9.5 min | 7 |
-| **SearchClaw** | GPT-5.4 (via Azure) | xhigh | **74.0%** (37/50) | 40.2 | 45.5 | 26.2 | 10.2 min | 5 |
-
-The ReAct baseline is a plain ReAct loop with the same `web_search` and `web_fetch` tools but no harness engineering — no quality hooks, research planning, content extraction, context compaction, or memory. SearchClaw's structured harness achieves a **+20 percentage point improvement** over the baseline.
-
-**Experiment setup:**
-- For fair comparison, SearchClaw disabled all search tools except `web_search` (i.e., `academic_search`, `news_search`, and `wechat_search` were removed), matching the ReAct baseline's tool set.
-- Both systems were limited to a maximum of 50 search calls and 50 fetch calls per question. Once a limit is reached, the tool returns a dummy message prompting the agent to synthesize its final answer.
-- The GPT-5.4 service on Microsoft Azure exhibits occasional refusals due to its content filtering. All refused questions were retried once.
 
 ## Browser Integration
 
