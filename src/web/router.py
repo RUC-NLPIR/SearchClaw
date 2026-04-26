@@ -14,10 +14,11 @@ import asyncio
 import json
 import logging
 import os
+import time as _time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -230,15 +231,7 @@ def create_app() -> FastAPI:
         yield
         # Shutdown: close all httpx clients held by tools
         logger.info("Shutting down — closing HTTP clients")
-        for tool in tool_registry.all_tools():
-            for attr_name in ("_client", "_jina_client"):
-                client = getattr(tool, attr_name, None)
-                if client is not None and hasattr(client, "aclose"):
-                    try:
-                        await client.aclose()
-                        logger.debug(f"Closed {attr_name} on {tool.name}")
-                    except Exception as e:
-                        logger.warning(f"Error closing {attr_name} on {tool.name}: {e}")
+        await tool_registry.close_all()
         # Shutdown: close browser manager (if initialized)
         try:
             from src.utils.browser_manager import BrowserManager
@@ -251,7 +244,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="SearchClaw",
         description="A web research agent powered by LLMs",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
 
@@ -551,7 +544,6 @@ def create_app() -> FastAPI:
                     continue
 
                 # Per-connection query rate limiting
-                import time as _time
                 now_ts = _time.monotonic()
                 _query_timestamps[:] = [t for t in _query_timestamps if now_ts - t < 60]
                 if len(_query_timestamps) >= _max_queries_per_minute:
@@ -666,6 +658,10 @@ def create_app() -> FastAPI:
                         event = await gen.asend(sent_value)
                         sent_value = None  # Reset after each send
 
+                        # Inject session_id into DONE event before sending
+                        if event.type == EventType.DONE:
+                            event.data["session_id"] = session_id
+
                         try:
                             await ws.send_json(event.to_dict())
                         except Exception as e:
@@ -700,8 +696,6 @@ def create_app() -> FastAPI:
                         # Capture session summary from DONE event
                         elif event.type == EventType.DONE:
                             done_event_data = event.data
-                            # Inject session_id so frontend can track it
-                            event.data["session_id"] = session_id
                             if "session_summary" in event.data:
                                 session_summary = event.data["session_summary"]
                             # Capture condensed messages for conversation continuity

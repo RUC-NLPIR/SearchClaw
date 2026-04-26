@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import httpx
 from lxml import html as lxml_html

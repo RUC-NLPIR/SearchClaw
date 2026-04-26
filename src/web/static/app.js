@@ -381,9 +381,14 @@ function copyResponseMarkdown(assistantEl, btn) {
         ta.style.cssText = 'position:fixed;left:-9999px';
         document.body.appendChild(ta);
         ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        doCopyFeedback();
+        try {
+            document.execCommand('copy'); // deprecated but only fallback for plain HTTP
+            doCopyFeedback();
+        } catch (e) {
+            console.warn('Copy failed:', e);
+        } finally {
+            document.body.removeChild(ta);
+        }
     }
 
     // Clipboard API only works in secure contexts (HTTPS / localhost).

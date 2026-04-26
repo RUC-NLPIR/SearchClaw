@@ -60,7 +60,7 @@ def _is_retryable(error: Exception) -> bool:
         return True
 
     # Timeout
-    if "timeout" in error_str or "408" in error_str:
+    if "timeout" in error_str or "timeout" in error_type.lower() or "408" in error_str:
         return True
 
     # NOT retryable: BadRequest (400), AuthenticationError (401/403),
@@ -90,6 +90,7 @@ class ModelConfig:
     side_query_base_url: str = ""
     max_retries: int = 3
     retry_base_delay_ms: int = 500
+    reasoning_effort: str = ""  # "minimal", "low", "medium", "high", "xhigh", or "" for default
 
     @classmethod
     def from_settings(cls, settings_path: str | Path = "config/settings.yaml") -> ModelConfig:
@@ -117,10 +118,90 @@ class ModelConfig:
                 side_query_base_url=llm.get("side_query_base_url", "") or "",
                 max_retries=int(llm.get("max_retries", cls.max_retries)),
                 retry_base_delay_ms=int(llm.get("retry_base_delay_ms", cls.retry_base_delay_ms)),
+                reasoning_effort=llm.get("reasoning_effort", "") or "",
             )
         except Exception as e:
             logger.warning(f"Failed to load settings from {path}: {e}, using defaults")
             return cls()
+
+
+def _is_gpt_model(model: str) -> bool:
+    """
+    Check if a model is an OpenAI GPT/reasoning model that should use
+    the Responses API instead of Chat Completions.
+
+    Responses API handles reasoning model state (hidden reasoning tokens,
+    previous_response_id chaining) correctly, avoiding "Item with id not found"
+    errors that occur with Chat Completions.
+    """
+    lower = model.lower()
+    prefixes = (
+        "openai/gpt", "gpt-", "gpt5",
+        "openai/o1", "openai/o3", "openai/o4",
+        "o1-", "o3-", "o4-",
+    )
+    return any(lower.startswith(p) for p in prefixes)
+
+
+def _convert_tools_to_responses_format(tools: list[dict]) -> list[dict]:
+    """
+    Convert tool schemas from Chat Completions format to Responses API format.
+
+    Chat Completions: {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+    Responses API:    {"type": "function", "name": ..., "description": ..., "parameters": ...}
+    """
+    converted = []
+    for t in tools:
+        if t.get("type") == "function" and "function" in t:
+            func = t["function"]
+            converted.append({
+                "type": "function",
+                "name": func["name"],
+                "description": func.get("description", ""),
+                "parameters": func.get("parameters", {}),
+            })
+        else:
+            # Already in Responses format or unknown — pass through
+            converted.append(t)
+    return converted
+
+
+def _extract_delta_items(messages: list[dict]) -> list[dict]:
+    """
+    Extract items to send as delta on a Responses API continuation call.
+
+    Finds all tool-result messages after the last assistant message
+    (these correspond to the function calls from the previous response),
+    plus any user messages injected after them (e.g., plan nudge, synthesis).
+
+    Returns a list of function_call_output and user-role items.
+    """
+    # Find the index of the last assistant message
+    last_assistant_idx = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "assistant":
+            last_assistant_idx = i
+            break
+
+    if last_assistant_idx < 0:
+        return []
+
+    items = []
+    for msg in messages[last_assistant_idx + 1:]:
+        role = msg.get("role", "")
+        if role == "tool":
+            items.append({
+                "type": "function_call_output",
+                "call_id": msg.get("tool_call_id", ""),
+                "output": msg.get("content", ""),
+            })
+        elif role == "user":
+            items.append({
+                "role": "user",
+                "content": msg.get("content", ""),
+            })
+
+    return items
 
 
 class LLMClient:
@@ -134,6 +215,18 @@ class LLMClient:
 
     def __init__(self, config: ModelConfig | None = None):
         self.config = config or ModelConfig()
+        # Per-session response ID tracking for Responses API chaining.
+        # Keyed by session_id so concurrent sessions don't interfere.
+        self._response_ids: dict[str, str] = {}
+
+    def reset_response_chain(self, session_id: str = "") -> None:
+        """Reset the Responses API chain for a session."""
+        self._response_ids.pop(session_id, None)
+
+    @property
+    def uses_responses_api(self) -> bool:
+        """Whether the default model uses the Responses API (GPT/reasoning models)."""
+        return _is_gpt_model(self.config.default_model)
 
     async def stream(
         self,
@@ -142,6 +235,7 @@ class LLMClient:
         tools: list[dict] | None = None,
         model: str | None = None,
         max_tokens: int | None = None,
+        session_id: str = "",
     ) -> AsyncGenerator[StreamEvent, None]:
         """
         Stream an LLM response, yielding StreamEvents.
@@ -152,6 +246,19 @@ class LLMClient:
         """
         target_model = model or self.config.default_model
         target_max_tokens = max_tokens or self.config.max_tokens
+
+        # Dispatch: use Responses API for GPT/reasoning models
+        if _is_gpt_model(target_model):
+            async for event in self._stream_responses(
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                model=target_model,
+                max_tokens=target_max_tokens,
+                session_id=session_id,
+            ):
+                yield event
+            return
 
         # Build the messages list with system prompt
         api_messages = [{"role": "system", "content": system_prompt}] + messages
@@ -275,6 +382,197 @@ class LLMClient:
                 tools=tools,
                 model=self.config.fallback_model,
                 max_tokens=max_tokens,
+                session_id=session_id,
+            ):
+                yield event
+        elif last_error:
+            yield StreamEvent(
+                type=EventType.ERROR,
+                data={"message": f"LLM call failed: {str(last_error)}"},
+            )
+
+    async def _stream_responses(
+        self,
+        messages: list[dict],
+        system_prompt: str,
+        tools: list[dict] | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        session_id: str = "",
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Stream via litellm Responses API with previous_response_id chaining.
+
+        Used for OpenAI GPT/reasoning models to correctly handle hidden
+        reasoning state. On the first call (no previous_response_id),
+        sends the system prompt + user query. On subsequent calls, only sends
+        the delta (new function_call_output items).
+
+        session_id isolates the response chain so concurrent sessions
+        don't overwrite each other's previous_response_id.
+        """
+        target_model = model or self.config.default_model
+        target_max_tokens = max_tokens or self.config.max_tokens
+
+        # Per-session response ID
+        prev_response_id = self._response_ids.get(session_id)
+
+        # Convert tools to Responses API format
+        api_tools = _convert_tools_to_responses_format(tools) if tools else None
+
+        # Build input items
+        if prev_response_id is None:
+            # First call — send system prompt + all messages.
+            # Convert to Responses API format (developer/user/assistant roles).
+            # Do NOT include tool_calls or tool-role messages — those use
+            # call IDs from Chat Completions that the Responses API won't
+            # recognise.  The caller (_final_answer) strips these before
+            # passing clean_messages.
+            input_items = []
+            if system_prompt:
+                input_items.append({"role": "developer", "content": system_prompt})
+            for msg in messages:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    input_items.append({"role": role, "content": content})
+        else:
+            # Continuation — only send new tool results (delta)
+            input_items = _extract_delta_items(messages)
+            # If no tool results but we have a previous response, it might be
+            # a forced final answer with a new user message
+            if not input_items:
+                # Find the last user message (e.g., synthesis request)
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        input_items = [{"role": "user", "content": msg.get("content", "")}]
+                        break
+
+        last_error: Exception | None = None
+
+        for attempt in range(1, self.config.max_retries + 2):
+            try:
+                kwargs: dict = {
+                    "model": target_model,
+                    "input": input_items,
+                    "max_output_tokens": target_max_tokens,
+                    "truncation": "auto",
+                    "store": True,  # Required for previous_response_id chaining
+                }
+
+                if api_tools:
+                    kwargs["tools"] = api_tools
+
+                if prev_response_id:
+                    kwargs["previous_response_id"] = prev_response_id
+
+                if self.config.reasoning_effort:
+                    kwargs["reasoning"] = {"effort": self.config.reasoning_effort}
+
+                base_url = self.config.base_url
+                if base_url:
+                    kwargs["api_base"] = base_url
+
+                logger.debug(
+                    f"Responses API call: model={target_model}, "
+                    f"input_items={len(input_items)}, tools={len(api_tools) if api_tools else 0}, "
+                    f"prev_id={prev_response_id}"
+                )
+
+                response = await asyncio.wait_for(
+                    litellm.aresponses(**kwargs),
+                    timeout=600,  # 10 min timeout per Responses API call
+                )
+
+                # Save response ID for chaining (per-session)
+                prev_response_id = response.id
+                self._response_ids[session_id] = response.id
+
+                # Log response output types for debugging
+                output_summary = []
+                for item in response.output:
+                    item_type = getattr(item, "type", None)
+                    if item_type == "message":
+                        texts = [getattr(p, "text", "")[:100] for p in getattr(item, "content", []) if getattr(p, "type", None) == "output_text"]
+                        output_summary.append(f"message({texts})")
+                    elif item_type == "function_call":
+                        output_summary.append(f"function_call({item.name})")
+                    else:
+                        output_summary.append(f"{item_type}")
+                logger.info(f"Responses API response: id={response.id}, output={output_summary}")
+
+                # Parse response.output and yield StreamEvents
+                has_text = False
+                for item in response.output:
+                    item_type = getattr(item, "type", None)
+
+                    if item_type == "message":
+                        # Message item contains content parts
+                        for part in getattr(item, "content", []):
+                            if getattr(part, "type", None) == "output_text":
+                                has_text = True
+                                yield StreamEvent(
+                                    type=EventType.TEXT_DELTA,
+                                    data={"text": part.text},
+                                )
+
+                    elif item_type == "function_call":
+                        # Tool call
+                        try:
+                            parsed_args = json.loads(item.arguments)
+                        except (json.JSONDecodeError, AttributeError):
+                            parsed_args = {"raw": getattr(item, "arguments", "")}
+
+                        yield StreamEvent(
+                            type=EventType.TOOL_USE,
+                            data={
+                                "tool_use_id": item.call_id,
+                                "tool_name": item.name,
+                                "tool_input": parsed_args,
+                            },
+                        )
+
+                if not has_text and not any(getattr(item, "type", None) == "function_call" for item in response.output):
+                    output_types = [getattr(item, "type", "?") for item in response.output]
+                    logger.warning(f"Responses API returned no text and no function calls. Output types: {output_types}")
+
+                # Success — exit retry loop
+                return
+
+            except Exception as e:
+                last_error = e
+                logger.error(
+                    f"Responses API call failed with {target_model} "
+                    f"(attempt {attempt}/{self.config.max_retries + 1}): {e}"
+                )
+
+                if not _is_retryable(e) or attempt > self.config.max_retries:
+                    break
+
+                delay = (self.config.retry_base_delay_ms / 1000) * (2 ** (attempt - 1))
+                logger.info(f"Retrying in {delay:.1f}s (attempt {attempt}/{self.config.max_retries})...")
+                yield StreamEvent(
+                    type=EventType.STATUS,
+                    data={"message": f"API error, retrying in {delay:.0f}s... (attempt {attempt}/{self.config.max_retries})"},
+                )
+                await asyncio.sleep(delay)
+
+        # All retries exhausted — try fallback model
+        if last_error and model != self.config.fallback_model:
+            logger.info(f"Falling back to {self.config.fallback_model}")
+            yield StreamEvent(
+                type=EventType.STATUS,
+                data={"message": f"Switched to fallback model: {self.config.fallback_model}"},
+            )
+            # Reset chain for fallback (different model)
+            self._response_ids.pop(session_id, None)
+            async for event in self.stream(
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                model=self.config.fallback_model,
+                max_tokens=max_tokens,
+                session_id=session_id,
             ):
                 yield event
         elif last_error:

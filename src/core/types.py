@@ -7,6 +7,7 @@ hooks, and WebSocket events.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -117,7 +118,6 @@ class Message:
                 if block.type == "text" and block.text:
                     text_parts.append(block.text)
                 elif block.type == "tool_use":
-                    import json
                     tool_calls.append({
                         "id": block.tool_use_id,
                         "type": "function",

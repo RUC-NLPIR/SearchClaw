@@ -14,6 +14,7 @@ Checks performed:
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import socket
@@ -97,16 +98,32 @@ def _is_ssrf_ip(ip_str: str) -> bool:
 
 def validate_url_for_ssrf(url: str) -> tuple[bool, str]:
     """
-    Validate a URL to prevent SSRF attacks.
+    Validate a URL to prevent SSRF attacks (synchronous wrapper).
 
     Returns (is_safe, reason). If is_safe is False, the reason
     explains why the URL was blocked.
 
-    Checks:
-    1. Scheme must be http/https
-    2. Hostname must not be a known metadata endpoint
-    3. If hostname is an IP literal, it must not be private/reserved
-    4. DNS resolution of hostname must not point to private/reserved IPs
+    For the DNS resolution step, this uses a synchronous fallback.
+    Prefer validate_url_for_ssrf_async() in async contexts.
+    """
+    return _validate_url_common(url, dns_results=_sync_dns_resolve(url))
+
+
+async def validate_url_for_ssrf_async(url: str) -> tuple[bool, str]:
+    """
+    Async version of validate_url_for_ssrf — uses non-blocking DNS resolution.
+    """
+    dns_results = await _async_dns_resolve(url)
+    return _validate_url_common(url, dns_results=dns_results)
+
+
+def _validate_url_common(
+    url: str, dns_results: list[tuple] | None
+) -> tuple[bool, str]:
+    """
+    Core SSRF validation logic shared by sync and async entry points.
+
+    dns_results: output of getaddrinfo, or None if DNS failed.
     """
     try:
         parsed = urlparse(url)
@@ -135,29 +152,45 @@ def validate_url_for_ssrf(url: str) -> tuple[bool, str]:
     if _is_ssrf_ip(hostname):
         return False, f"Blocked private/internal IP: {hostname}"
 
-    # DNS resolution check — resolve hostname and verify the IP
-    try:
-        # Use getaddrinfo for both IPv4 and IPv6
-        results = socket.getaddrinfo(
-            hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
-            proto=socket.IPPROTO_TCP,
-        )
-        for family, _type, _proto, _canonname, sockaddr in results:
+    # DNS resolution check
+    if dns_results is not None:
+        for family, _type, _proto, _canonname, sockaddr in dns_results:
             ip_str = sockaddr[0]
             if _is_ssrf_ip(ip_str):
                 return False, (
                     f"Blocked: hostname '{hostname}' resolves to private/internal "
                     f"IP {ip_str}"
                 )
-    except socket.gaierror:
-        # DNS resolution failed — allow the request (httpx will handle
-        # the connection error). We don't want to block URLs that happen
-        # to have temporary DNS issues.
-        pass
-    except Exception as e:
-        logger.warning(f"URL validation DNS check failed for {hostname}: {e}")
-        # On unexpected errors, allow the request (fail-open for DNS
-        # check only — the other checks are strict)
-        pass
 
     return True, ""
+
+
+def _sync_dns_resolve(url: str) -> list[tuple] | None:
+    """Synchronous DNS resolution — fallback for non-async callers."""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        if not hostname:
+            return None
+        return socket.getaddrinfo(
+            hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
+            proto=socket.IPPROTO_TCP,
+        )
+    except (socket.gaierror, Exception):
+        return None
+
+
+async def _async_dns_resolve(url: str) -> list[tuple] | None:
+    """Non-blocking DNS resolution using the event loop."""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        if not hostname:
+            return None
+        loop = asyncio.get_running_loop()
+        return await loop.getaddrinfo(
+            hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
+            proto=socket.IPPROTO_TCP,
+        )
+    except (socket.gaierror, Exception):
+        return None

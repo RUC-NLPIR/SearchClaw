@@ -28,7 +28,7 @@ import httpx
 from src.core.tool import Tool, ToolUseContext
 from src.core.types import Citation, SourceType, ToolResult, ValidationResult
 from src.utils.html_to_markdown import html_to_markdown
-from src.utils.url_validator import validate_url_for_ssrf
+from src.utils.url_validator import validate_url_for_ssrf, validate_url_for_ssrf_async
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,26 @@ class WebFetchTool(Tool):
     async def call(self, args: dict, context: ToolUseContext) -> ToolResult:
         url = args["url"]
         target_selector = args.get("target_selector")
+
+        # Async SSRF check with non-blocking DNS resolution
+        is_safe, reason = await validate_url_for_ssrf_async(url)
+        if not is_safe:
+            return ToolResult(
+                data=f"URL blocked (SSRF protection): {reason}",
+                is_error=True,
+            )
+
+        # Block fetching search engine result pages — they return useless
+        # content (locale selectors, JS-rendered pages) and waste fetch quota.
+        _lower = url.lower()
+        if any(domain in _lower for domain in (
+            "duckduckgo.com", "google.com/search", "bing.com/search",
+            "search.yahoo.com", "yandex.com/search", "baidu.com/s",
+        )):
+            return ToolResult(
+                data="Cannot fetch search engine result pages. Use web_search tool instead.",
+                is_error=False,
+            )
 
         # Rate limiting
         if context.rate_limiter:
@@ -231,13 +251,13 @@ class WebFetchTool(Tool):
             full_content, url, title, context
         )
         if result is not None:
-            # Add citation to the extracted/truncated result
-            result.citations = [Citation(
+            # Add citation (preserving any existing citations from extraction)
+            result.citations.append(Citation(
                 url=url,
                 title=title,
                 snippet=markdown[:300],
                 source_type=SourceType.WEB,
-            )]
+            ))
             return result
 
         # Small content — return raw (no extraction needed)
@@ -302,12 +322,12 @@ class WebFetchTool(Tool):
             full_content, url, title, context
         )
         if extracted is not None:
-            extracted.citations = [Citation(
+            extracted.citations.append(Citation(
                 url=url,
                 title=title,
                 snippet=content[:300],
                 source_type=SourceType.WEB,
-            )]
+            ))
             return extracted
 
         # Small content — return raw
@@ -400,12 +420,12 @@ class WebFetchTool(Tool):
             full_content, url, title, context
         )
         if result is not None:
-            result.citations = [Citation(
+            result.citations.append(Citation(
                 url=url,
                 title=title,
                 snippet=markdown[:300],
                 source_type=SourceType.WEB,
-            )]
+            ))
             return result
 
         # Small content — return raw

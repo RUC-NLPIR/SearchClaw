@@ -38,8 +38,8 @@ llm:
   # an OpenAI-compatible API, use the "openai/" prefix:
   #   "openai/claude-sonnet-4.6"    — routes through OpenAI-compatible format
   # The part after the prefix is the model name sent in the API request body.
-  # default_model: "anthropic/claude-opus-4.6"
   default_model: "anthropic/claude-opus-4.6"
+  # default_model: "gpt-5.4"
   # Cheap model for side-queries (ranking, relevance, quality checks)
   side_query_model: "anthropic/claude-sonnet-4.6"
   # Fallback model if primary is unavailable
@@ -61,29 +61,22 @@ llm:
   # If blank, falls back to the main base_url above.
   side_query_base_url: ""
 
+  # Reasoning effort for OpenAI reasoning models (o1, o3, gpt-5.4, etc.)
+  # Options: "minimal", "low", "medium", "high", "xhigh"
+  # Leave empty to use the model's default.
+  reasoning_effort: "xhigh"
+
   # Retry on transient errors (429, 5xx, connection, timeout)
   max_retries: 3
   retry_base_delay_ms: 500
 
 limits:
   # Maximum turns in the agentic loop before forcing a stop
-  max_turns: 100
+  max_turns: 300
   # Maximum search tool calls (web_search, academic_search, news_search)
-  max_search: 30
+  max_search: 100
   # Maximum web_fetch tool calls
-  max_fetch: 30
-  # Token threshold to trigger context compaction
-  compact_threshold_tokens: 80000
-  # Rate limit: max requests per domain per minute
-  rate_limit_per_domain: 50
-
-limits:
-  # Maximum turns in the agentic loop before forcing a stop
-  max_turns: 100
-  # Maximum search tool calls (web_search, academic_search, news_search)
-  max_search: 30
-  # Maximum web_fetch tool calls
-  max_fetch: 30
+  max_fetch: 100
   # Token threshold to trigger context compaction
   compact_threshold_tokens: 80000
   # Rate limit: max requests per domain per minute

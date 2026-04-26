@@ -98,6 +98,10 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
         citations=[],
     )
 
+    # Reset Responses API chain for a fresh session
+    if hasattr(params.llm_client, "reset_response_chain"):
+        params.llm_client.reset_response_chain(session_id=params.session_id)
+
     # Add the user query as the first message (if not already in history)
     if not state.messages or state.messages[-1].role != "user":
         state.messages.append(Message(role="user", content=params.query))
@@ -110,6 +114,11 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
         type=EventType.STATUS,
         data={"message": "Research started"},
     )
+
+    # Safety valve: if all tool calls are skipped (over-limit) for N
+    # consecutive turns, force _final_answer to prevent infinite loops.
+    _consecutive_all_skipped = 0
+    _force_final = False
 
     # --- Main loop ---
     while True:
@@ -127,44 +136,64 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
             break
 
         # --- Guard: per-tool limits ---
-        if state.search_count >= params.max_search:
-            yield StreamEvent(
-                type=EventType.STATUS,
-                data={"message": f"Reached search limit ({params.max_search}). Synthesizing final answer..."},
-            )
-            async for ev in _final_answer(state, params):
-                yield ev
-            break
+        # For Responses API (GPT models), we preserve the server-side chain
+        # by continuing the loop and letting per-call filtering inject dummy
+        # results.  Only force _final_answer when BOTH limits are hit or
+        # when using Chat Completions.
+        _use_responses = params.llm_client.uses_responses_api
 
-        if state.fetch_count >= params.max_fetch:
-            yield StreamEvent(
-                type=EventType.STATUS,
-                data={"message": f"Reached fetch limit ({params.max_fetch}). Synthesizing final answer..."},
-            )
-            async for ev in _final_answer(state, params):
-                yield ev
-            break
+        if state.search_count >= params.max_search and state.fetch_count >= params.max_fetch:
+            if not _use_responses:
+                # Chat Completions: force final answer
+                yield StreamEvent(
+                    type=EventType.STATUS,
+                    data={"message": "Reached search and fetch limits. Synthesizing final answer..."},
+                )
+                async for ev in _final_answer(state, params):
+                    yield ev
+                break
+            # Responses API: continue loop, safety valve will handle exit
+
+        # Log individual limit warnings (but don't terminate — the agent
+        # can still use the other tool type)
+        if state.search_count >= params.max_search and not _use_responses:
+            if state.search_count == params.max_search:  # Log once
+                yield StreamEvent(
+                    type=EventType.STATUS,
+                    data={"message": f"Search limit reached ({params.max_search}). Continuing with fetch tools..."},
+                )
+
+        if state.fetch_count >= params.max_fetch and not _use_responses:
+            if state.fetch_count == params.max_fetch:  # Log once
+                yield StreamEvent(
+                    type=EventType.STATUS,
+                    data={"message": f"Fetch limit reached ({params.max_fetch}). Continuing with search tools..."},
+                )
 
         # --- Compaction ---
-        # Lazy import to avoid circular deps
-        try:
-            from src.core.compact import should_compact, compact_messages
-            if should_compact(state.messages, params.compact_threshold_tokens):
-                yield StreamEvent(
-                    type=EventType.STATUS,
-                    data={"message": "Compacting context..."},
-                )
-                state.messages = await compact_messages(
-                    state.messages,
-                    params.compact_threshold_tokens,
-                )
-                state.compaction_count += 1
-                yield StreamEvent(
-                    type=EventType.STATUS,
-                    data={"message": f"Context compacted (#{state.compaction_count})"},
-                )
-        except ImportError:
-            pass  # Compaction not yet implemented — skip
+        # Skip for Responses API models: the server manages context via
+        # previous_response_id + truncation:"auto".  Local compaction would
+        # delete messages that the server-side chain still references,
+        # causing "No tool output found" errors.
+        if not _use_responses:
+            try:
+                from src.core.compact import should_compact, compact_messages
+                if should_compact(state.messages, params.compact_threshold_tokens):
+                    yield StreamEvent(
+                        type=EventType.STATUS,
+                        data={"message": "Compacting context..."},
+                    )
+                    state.messages = await compact_messages(
+                        state.messages,
+                        params.compact_threshold_tokens,
+                    )
+                    state.compaction_count += 1
+                    yield StreamEvent(
+                        type=EventType.STATUS,
+                        data={"message": f"Context compacted (#{state.compaction_count})"},
+                    )
+            except ImportError:
+                pass  # Compaction not yet implemented — skip
 
         # --- Convert messages to API format ---
         api_messages = [msg.to_api_dict() for msg in state.messages]
@@ -181,6 +210,7 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
                 system_prompt=params.system_prompt,
                 tools=tool_schemas if tool_schemas else None,
                 max_tokens=params.llm_client.config.max_tokens,
+                session_id=params.session_id,
             ):
                 # Pass through to caller (streams to WebSocket)
                 yield event
@@ -309,11 +339,39 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
 
         # Add "limit reached" results for skipped tool calls
         for tc in skipped_tool_calls:
+            name = tc["tool_name"]
+            if name in ("web_search", "academic_search", "news_search"):
+                msg = "Search limit reached. You cannot perform more searches."
+            elif name == "web_fetch":
+                msg = "Fetch limit reached. You cannot fetch more pages."
+            else:
+                msg = f"{name} limit reached."
             tool_results.append(ToolResult(
-                data=f"{tc['tool_name']} limit reached. Please provide your final answer based on the information gathered.",
+                data=msg,
                 is_error=False,
             ))
             allowed_tool_calls.append(tc)  # re-add so zip() below pairs correctly
+
+        # Safety valve: if ALL tool calls were skipped for too many
+        # consecutive turns, the model is stuck calling over-limit tools.
+        _real_call_count = len(allowed_tool_calls) - len(skipped_tool_calls)
+        if _real_call_count == 0 and skipped_tool_calls:
+            _consecutive_all_skipped += 1
+            if _consecutive_all_skipped >= 3:
+                yield StreamEvent(
+                    type=EventType.STATUS,
+                    data={"message": "All tools at limit for 3 turns. Synthesizing final answer..."},
+                )
+                if not _use_responses:
+                    async for ev in _final_answer(state, params):
+                        yield ev
+                    break
+                # Responses API: let dummy results get injected below,
+                # then add a user nudge. Next iteration will call LLM
+                # with no tools, preserving the chain.
+                _force_final = True
+        else:
+            _consecutive_all_skipped = 0
 
         # --- Inject tool results into conversation ---
         # For OpenAI-compatible APIs, tool results go as separate messages
@@ -379,6 +437,19 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
                 type=EventType.PLAN_UPDATE,
                 data=state.research_plan.to_dict(),
             )
+
+        # Safety valve: after injecting dummy results, nudge the model
+        # to produce a final answer on the next iteration (no tools).
+        if _force_final:
+            state.messages.append(Message(
+                role="user",
+                content=(
+                    "All tool limits have been reached. You cannot make any more tool calls. "
+                    "Please provide your final answer now based on all the research you have gathered."
+                ),
+            ))
+            tool_schemas = None
+            continue
 
         # --- Soft nudge: suggest research_plan if not yet used after several searches ---
         # Only nudge once (check via transition_reason marker)
@@ -541,20 +612,33 @@ async def _execute_single_tool(
             is_error=True,
         )
 
-    # Execute
-    try:
-        result = await tool.call(tool_input, context)
-        logger.info(
-            f"Tool {tool_name} completed: {len(result.data)} chars, "
-            f"{len(result.citations)} citations, truncated={result.truncated}"
-        )
-        return result
-    except Exception as e:
-        logger.error(f"Tool {tool_name} execution error: {e}", exc_info=True)
-        return ToolResult(
-            data=f"Tool '{tool_name}' failed with error: {str(e)}",
-            is_error=True,
-        )
+    # Execute with retry for rate-limit (429) errors
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            result = await tool.call(tool_input, context)
+            logger.info(
+                f"Tool {tool_name} completed: {len(result.data)} chars, "
+                f"{len(result.citations)} citations, truncated={result.truncated}"
+            )
+            return result
+        except Exception as e:
+            error_str = str(e)
+            # Retry on 429 (rate limit) with exponential backoff
+            if "429" in error_str and attempt < max_retries:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                logger.warning(
+                    f"Tool {tool_name} rate-limited (429), retrying in {wait}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(wait)
+                continue
+            # All other errors or retries exhausted — return friendly message
+            logger.error(f"Tool {tool_name} execution error: {e}", exc_info=True)
+            return ToolResult(
+                data=f"The {tool_name} service is temporarily unavailable. Please try again later.",
+                is_error=False,
+            )
 
 
 async def _final_answer(
@@ -592,8 +676,10 @@ async def _final_answer(
     # Inject a summary of research findings + synthesis request
     synthesis_msg = ""
     if tool_findings:
+        # Keep only the last 10 results to avoid overwhelming context
+        recent = tool_findings[-10:]
         synthesis_msg += "Here is a summary of your research findings:\n\n"
-        synthesis_msg += "\n\n".join(tool_findings[-15:])  # Last 15 results
+        synthesis_msg += "\n\n".join(recent)
         synthesis_msg += "\n\n---\n\n"
 
     synthesis_msg += (
@@ -606,15 +692,49 @@ async def _final_answer(
 
     try:
         final_text_parts: list[str] = []
-        async for event in params.llm_client.stream(
-            messages=clean_messages,
-            system_prompt=params.system_prompt,
-            tools=None,  # No tools — force a text-only response
-            max_tokens=params.llm_client.config.max_tokens,
-        ):
-            if event.type == EventType.TEXT_DELTA:
-                final_text_parts.append(event.data.get("text", ""))
-            yield event
+        # For Responses API (GPT models): instead of resetting the chain
+        # and losing all research context, send dummy outputs for any
+        # pending function calls through the existing chain, then the
+        # synthesis message.  This preserves the full conversation state.
+        use_responses_api = params.llm_client.uses_responses_api
+
+        # Use a smaller max_tokens for final synthesis to avoid long waits
+        final_max_tokens = min(params.llm_client.config.max_tokens, 16384)
+
+        if use_responses_api and hasattr(params.llm_client, "_response_ids"):
+            # Reset the chain and start a fresh Responses API call
+            # with no tools.  We must break the chain because the
+            # previous_response_id carries tool definitions forward
+            # and the model will keep calling tools even if we omit
+            # the tools param.  We include research findings in the
+            # prompt so the model still has context to synthesize.
+            params.llm_client.reset_response_chain(session_id=params.session_id)
+
+            # Build a self-contained prompt with system + query + findings
+            async for event in params.llm_client.stream(
+                messages=clean_messages,
+                system_prompt=params.system_prompt,
+                tools=None,
+                max_tokens=final_max_tokens,
+                session_id=params.session_id,
+            ):
+                if event.type == EventType.TEXT_DELTA:
+                    final_text_parts.append(event.data.get("text", ""))
+                yield event
+        else:
+            # Chat Completions path — reset chain and use clean messages
+            if hasattr(params.llm_client, "reset_response_chain"):
+                params.llm_client.reset_response_chain(session_id=params.session_id)
+            async for event in params.llm_client.stream(
+                messages=clean_messages,
+                system_prompt=params.system_prompt,
+                tools=None,  # No tools — force a text-only response
+                max_tokens=final_max_tokens,
+                session_id=params.session_id,
+            ):
+                if event.type == EventType.TEXT_DELTA:
+                    final_text_parts.append(event.data.get("text", ""))
+                yield event
 
         # Append the synthesized answer to state so that
         # state.last_assistant_message reflects the final answer,

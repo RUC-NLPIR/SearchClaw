@@ -120,6 +120,22 @@ class Tool(ABC):
         """
         return ValidationResult(valid=True)
 
+    async def aclose(self) -> None:
+        """
+        Close any resources held by this tool (e.g., httpx clients).
+
+        Called during application shutdown. Subclasses with HTTP clients
+        don't need to override this — the default implementation closes
+        any httpx.AsyncClient found on standard attribute names.
+        """
+        for attr in ("_client", "_jina_client"):
+            client = getattr(self, attr, None)
+            if client is not None and hasattr(client, "aclose"):
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
+
     def to_api_schema(self) -> dict:
         """
         Convert to the format expected by litellm/OpenAI function calling API.
@@ -179,6 +195,12 @@ class ToolRegistry:
         """Look up a tool by name."""
         return self._tools.get(name)
 
+    def remove(self, name: str) -> None:
+        """Remove a tool by name (no-op if not registered)."""
+        if name in self._tools:
+            del self._tools[name]
+            logger.info(f"Removed tool: {name}")
+
     def all_tools(self) -> list[Tool]:
         """All registered tools (for system prompt building)."""
         return list(self._tools.values())
@@ -190,6 +212,14 @@ class ToolRegistry:
     def get_concurrent_safe(self) -> set[str]:
         """Names of tools that can run in parallel."""
         return {name for name, tool in self._tools.items() if tool.is_concurrency_safe}
+
+    async def close_all(self) -> None:
+        """Close any HTTP clients held by registered tools."""
+        for tool in self._tools.values():
+            try:
+                await tool.aclose()
+            except Exception:
+                pass
 
 
 def build_default_registry(config: dict | None = None) -> ToolRegistry:

@@ -16,10 +16,12 @@ Directory structure:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -139,7 +141,10 @@ class MemoryStore:
 
         path = self.base_dir / filename
         entry.path = path
-        path.write_text(entry.to_frontmatter_md(), encoding="utf-8")
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, partial(path.write_text, entry.to_frontmatter_md(), encoding="utf-8")
+        )
 
         # Update index
         await self._update_index()
@@ -209,4 +214,7 @@ class MemoryStore:
 
         lines.append(f"\n---\n*{len(entries)} memories stored*")
 
-        self.index_path.write_text("\n".join(lines), encoding="utf-8")
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, partial(self.index_path.write_text, "\n".join(lines), encoding="utf-8")
+        )
