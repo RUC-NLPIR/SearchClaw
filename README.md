@@ -45,6 +45,7 @@ The ReAct baseline is a plain ReAct loop with the same `web_search` and `web_fet
 **Experiment setup:**
 - For fair comparison, SearchClaw disabled all search tools except `web_search` (i.e., `academic_search`, `news_search`, and `wechat_search` were removed), matching the ReAct baseline's tool set.
 - Both systems were limited to a maximum of 50 search calls and 50 fetch calls per question. Once a limit is reached, the tool returns a dummy message prompting the agent to synthesize its final answer.
+- To reduce API costs, both systems used self-hosted search and fetch services instead of the default Serper/Jina APIs.
 - The GPT-5.4 service on Microsoft Azure exhibits occasional refusals due to its content filtering. All refused questions were retried once.
 
 ## Quick Start
