@@ -77,9 +77,17 @@ def main():
         )
 
     if not os.environ.get("JINA_API_KEY"):
-        logger.warning(
-            "JINA_API_KEY not set — web_fetch will use direct fetch + local extraction. "
-            "Set JINA_API_KEY for better content extraction (JS-rendered pages, PDFs)."
+        logger.info(
+            "JINA_API_KEY not set — web_fetch will use Jina Reader in free mode "
+            "(20 RPM rate limit). Set JINA_API_KEY for 200 RPM."
+        )
+
+    if os.environ.get("EXA_API_KEY"):
+        logger.info("Exa search enabled with API key (higher rate limits)")
+    else:
+        logger.info(
+            "EXA_API_KEY not set — exa_search will use Exa MCP endpoint directly "
+            "(rate-limited). Set EXA_API_KEY for higher limits."
         )
 
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")):

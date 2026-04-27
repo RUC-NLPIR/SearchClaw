@@ -6,8 +6,9 @@ and converts it to clean markdown for the LLM.
 
 Fetch strategies (tried in order):
 1. Jina Reader API (r.jina.ai) — returns markdown directly, handles
-   JS-rendered pages, PDFs, and paywalled content. Set JINA_API_KEY
-   for higher rate limits (200 RPM vs 20 RPM without key).
+   JS-rendered pages, PDFs, and paywalled content. Works in free mode
+   (20 RPM) without any API key. Set JINA_API_KEY for higher rate
+   limits (200 RPM).
 2. Direct fetch + trafilatura — fetches raw HTML and extracts content
    locally. Works without any API key but struggles with JS-heavy pages.
 
@@ -177,9 +178,13 @@ class WebFetchTool(Tool):
         """
         Fetch via Jina Reader API (r.jina.ai).
 
-        Returns None if Jina is unavailable (no key configured and rate
-        limited, or network error), signaling the caller to try the
-        direct-fetch fallback.
+        Jina works in two modes:
+        - Free mode (no API key): 20 RPM rate limit, still handles
+          JS-rendered pages and PDFs.
+        - Authenticated mode (JINA_API_KEY set): 200 RPM, priority access.
+
+        Returns None if Jina is unavailable (rate limited or network error),
+        signaling the caller to try the direct-fetch fallback.
 
         Jina returns markdown directly — no local HTML-to-markdown needed.
         Handles JS-rendered pages, PDFs, and complex layouts better than
@@ -193,10 +198,12 @@ class WebFetchTool(Tool):
             "X-Retain-Images": "none",   # Strip images to save tokens
         }
 
-        # API key (optional but recommended — 200 RPM vs 20 RPM)
+        # API key (optional — 200 RPM with key vs 20 RPM free mode)
         jina_key = os.environ.get("JINA_API_KEY", "")
         if jina_key:
             headers["Authorization"] = f"Bearer {jina_key}"
+        else:
+            logger.debug(f"Jina free mode (no API key) for {url}")
 
         # Target selector — extract only matching elements
         if target_selector:
