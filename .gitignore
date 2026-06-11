@@ -1,6 +1,7 @@
 # Runtime data — generated during research sessions
 /sessions/
-/memory/
+/memory/*
+!/memory/.gitkeep
 /cache/
 /browser_data/
 
