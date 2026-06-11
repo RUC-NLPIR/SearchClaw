@@ -224,7 +224,11 @@ function onDone(d) {
 
     // Stats + copy button
     if (currentAssistantEl) {
-        const citedCount = citations.filter(c => c.cited).length;
+        const finalCitations = Array.isArray(d.citations)
+            ? d.citations
+            : citations.filter(c => c.cited);
+        citations = finalCitations.map((c, i) => ({ ...c, num: i + 1 }));
+
         const s = document.createElement('div');
         s.className = 'stats-bar';
 
@@ -233,7 +237,7 @@ function onDone(d) {
         s.appendChild(statsText);
 
         const sourcesText = document.createElement('span');
-        sourcesText.textContent = `${citedCount} sources`;
+        sourcesText.textContent = `${finalCitations.length} sources`;
         s.appendChild(sourcesText);
 
         // Copy button — copies only the final prose (raw markdown), not tool/status blocks

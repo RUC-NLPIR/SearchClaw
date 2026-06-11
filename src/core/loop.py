@@ -24,12 +24,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncGenerator
+from urllib.parse import urlsplit, urlunsplit
 
 from src.core.tool import ToolRegistry, ToolUseContext
 from src.core.types import (
+    Citation,
     ContentBlock,
     EventType,
     LoopState,
@@ -485,10 +488,12 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
             if t.findings
         )
 
+    final_citations = _final_citations_for_answer(state.citations, final_answer)
+
     yield StreamEvent(
         type=EventType.STATUS,
         data={
-            "message": f"Research complete. {len(state.citations)} sources cited. "
+            "message": f"Research complete. {len(final_citations)} sources cited. "
                        f"Turns: {state.turn_count}.",
         },
     )
@@ -501,7 +506,7 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
     yield StreamEvent(
         type=EventType.DONE,
         data={
-            "citations": [c.to_dict() for c in state.citations],
+            "citations": [c.to_dict() for c in final_citations],
             "turn_count": state.turn_count,
             "compaction_count": state.compaction_count,
             "session_summary": {
@@ -751,6 +756,93 @@ async def _final_answer(
             type=EventType.ERROR,
             data={"message": f"Failed to generate final answer: {str(e)}"},
         )
+
+
+def _final_citations_for_answer(
+    citations: list[Citation],
+    final_answer: str,
+) -> list[Citation]:
+    """
+    Return only sources actually used by the final answer.
+
+    Search/fetch tools discover many candidate citations. The UI's source
+    count should reflect the answer the user sees, so prefer URLs that appear
+    in the final markdown. If the answer contains no URLs, fall back to
+    explicit cite_source registrations.
+    """
+    answer_urls = _extract_urls(final_answer)
+    if answer_urls:
+        citations_by_url: dict[str, Citation] = {}
+        for citation in citations:
+            key = _normalize_url(citation.url)
+            if not key:
+                continue
+            existing = citations_by_url.get(key)
+            if existing is None or (citation.cited and not existing.cited):
+                citations_by_url[key] = citation
+
+        final: list[Citation] = []
+        seen: set[str] = set()
+        for key, raw_url in answer_urls:
+            if key in seen:
+                continue
+            seen.add(key)
+            citation = citations_by_url.get(key)
+            if citation is not None:
+                final.append(citation)
+            else:
+                final.append(Citation(url=raw_url, title=raw_url, snippet="", cited=True))
+        return final
+
+    return _dedupe_citations([citation for citation in citations if citation.cited])
+
+
+def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
+    deduped: list[Citation] = []
+    seen: set[str] = set()
+    for citation in citations:
+        key = _normalize_url(citation.url)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(citation)
+    return deduped
+
+
+def _extract_urls(text: str) -> list[tuple[str, str]]:
+    urls: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"\]\((https?://[^)\s]+)\)", text):
+        raw_url = _clean_url(match.group(1))
+        key = _normalize_url(raw_url)
+        if key and key not in seen:
+            seen.add(key)
+            urls.append((key, raw_url))
+    for match in re.finditer(r"https?://[^\s<>\])]+", text):
+        raw_url = _clean_url(match.group(0))
+        key = _normalize_url(raw_url)
+        if key and key not in seen:
+            seen.add(key)
+            urls.append((key, raw_url))
+    return urls
+
+
+def _clean_url(url: str) -> str:
+    return url.strip().rstrip(".,;:!?\"'")
+
+
+def _normalize_url(url: str) -> str:
+    cleaned = _clean_url(url)
+    if not cleaned:
+        return ""
+    try:
+        parts = urlsplit(cleaned)
+    except ValueError:
+        return cleaned
+    scheme = parts.scheme.lower()
+    netloc = parts.netloc.lower()
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit((scheme, netloc, path, parts.query, ""))
 
 
 async def _run_stop_hooks(
