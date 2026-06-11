@@ -111,6 +111,21 @@ tools:
   # Set to 0 to disable extraction (always use raw truncation).
   content_extraction_threshold: 15000
 
+skills:
+  # Load local SKILL.md files for the main web/API system.
+  # Benchmark scripts intentionally do not load skills.
+  enabled: true
+  # Later directories override earlier directories when skill names collide.
+  dirs: ["./skills"]
+  # Max characters used for the skill listing in the system prompt.
+  listing_max_chars: 8000
+  # Max characters returned when a skill body is loaded.
+  max_skill_chars: 50000
+  # Max runtime for Python scripts executed through run_skill_script.
+  script_timeout_seconds: 30
+  # Max characters returned from a skill script's stdout/stderr.
+  script_max_output_chars: 20000
+
 hooks:
   # Citation quality gate: minimum cited sources before answer is accepted
   # Set to 0 to disable the citation requirement

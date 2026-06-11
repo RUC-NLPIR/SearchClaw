@@ -25,6 +25,7 @@ https://github.com/user-attachments/assets/c9598751-da53-4e12-955d-870c9ff86b28
 - **Browser integration** -- optional Playwright/CDP support for JS-rendered pages and authenticated content
 - **Interactive clarification** -- the agent can ask you follow-up questions mid-research
 - **Research planning** -- automatic task decomposition for complex multi-part queries
+- **On-demand skills** -- local `SKILL.md` instructions and optional Python scripts loaded only when relevant
 - **Quality gates** -- built-in hooks enforce citation minimums, source diversity, and answer completeness before finalizing
 - **Context compaction** -- automatic context window management for long research sessions
 - **Persistent memory** -- learns from past sessions (source quality, user preferences, key facts)
@@ -104,6 +105,7 @@ Key sections:
 | `llm` | Model selection, base URL for custom endpoints, retry settings |
 | `limits` | Max agentic turns, context compaction threshold, rate limiting |
 | `tools` | Search result counts, HTTP timeouts, content extraction |
+| `skills` | On-demand local skills and bundled skill script limits |
 | `hooks` | Quality gates (min citations, min domains, min answer length) |
 | `browser` | Playwright/CDP browser integration |
 | `memory` | Persistent memory system |
@@ -147,6 +149,52 @@ Or via environment variable:
 export SEARCH_CLAW_API_KEY="your-secret-password"
 ```
 
+## Skills
+
+SearchClaw supports on-demand local skills for the main web/API system. A skill is a folder containing a `SKILL.md` file with metadata and task-specific instructions. At startup, SearchClaw discovers available skills and shows the model only their names and summaries. The full skill body is loaded only when the model calls the `use_skill` tool.
+
+Default skill directory:
+
+```text
+skills/<skill-name>/SKILL.md
+```
+
+Minimal skill example:
+
+```markdown
+---
+name: evidence-ledger
+description: Maintain a structured evidence ledger for multi-source research tasks.
+when_to_use: Use when an answer requires careful source tracking, conflict checks, or evidence synthesis.
+---
+
+# Evidence Ledger
+
+Follow this workflow when gathering and comparing evidence...
+```
+
+Optional skill scripts may live inside the same skill directory and can be invoked with `run_skill_script` after the skill is loaded:
+
+```text
+skills/<skill-name>/scripts/analyze.py
+```
+
+Script execution is intentionally restricted: only Python `.py` files inside the selected skill directory can run, no shell is used, and arguments are passed as a JSON array of strings.
+
+Configure skills in `config/settings.yaml`:
+
+```yaml
+skills:
+  enabled: true
+  dirs: ["./skills"]
+  listing_max_chars: 8000
+  max_skill_chars: 50000
+  script_timeout_seconds: 30
+  script_max_output_chars: 20000
+```
+
+The benchmark, baseline, and judge paths do not load skills.
+
 ## Architecture
 
 ```
@@ -157,6 +205,8 @@ src/
 │   ├── types.py    # Shared types (Message, ToolResult, Citation, etc.)
 │   ├── context.py  # System prompt builder
 │   └── compact.py  # Context window compaction
+├── skills/         # Local SKILL.md discovery and metadata parsing
+│   └── loader.py   # Skill loader used by the main web/API system
 ├── tools/          # Research tools the agent can use
 │   ├── web_search.py       # Web search (Serper -> DuckDuckGo fallback)
 │   ├── web_fetch.py        # Fetch & extract web pages (Jina -> direct fetch)
@@ -166,7 +216,9 @@ src/
 │   ├── deep_read.py        # Read cached page sections
 │   ├── cite_source.py      # Register citations for the answer
 │   ├── research_plan.py    # Decompose complex queries into sub-tasks
-│   └── ask_user.py         # Ask the user clarifying questions
+│   ├── ask_user.py         # Ask the user clarifying questions
+│   ├── use_skill.py        # Load full local skill instructions on demand
+│   └── run_skill_script.py # Run Python scripts bundled inside loaded skills
 ├── hooks/          # Quality gates that run before finalizing answers
 │   ├── engine.py           # Hook execution engine
 │   ├── builtin_hooks.py    # Citation, diversity, and completeness checks

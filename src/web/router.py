@@ -83,6 +83,13 @@ _browser_chrome_path = ""
 _browser_headless = True
 _browser_user_data_dir = ""
 _browser_search_engine = "google"
+# Skills config (main system only; benchmark scripts build their own registry)
+_skills_enabled = True
+_skills_dirs = ["./skills", "./.searchclaw/skills", "./.claude/skills"]
+_skills_listing_max_chars = 8000
+_skills_max_skill_chars = 50000
+_skills_script_timeout_seconds = 30
+_skills_script_max_output_chars = 20000
 try:
     import yaml
     _settings_path = Path("config/settings.yaml")
@@ -134,6 +141,24 @@ try:
         _browser_headless = _browser_cfg.get("headless", True)
         _browser_user_data_dir = _browser_cfg.get("user_data_dir", "")
         _browser_search_engine = _browser_cfg.get("search_engine", "google")
+        # Skills config
+        _skills_cfg = _settings.get("skills", {})
+        _skills_enabled = bool(_skills_cfg.get("enabled", True))
+        _configured_skill_dirs = _skills_cfg.get("dirs", _skills_dirs)
+        if isinstance(_configured_skill_dirs, str):
+            _skills_dirs = [
+                d.strip() for d in _configured_skill_dirs.split(",") if d.strip()
+            ]
+        elif isinstance(_configured_skill_dirs, list):
+            _skills_dirs = [str(d) for d in _configured_skill_dirs]
+        _skills_listing_max_chars = int(_skills_cfg.get("listing_max_chars", 8000))
+        _skills_max_skill_chars = int(_skills_cfg.get("max_skill_chars", 50000))
+        _skills_script_timeout_seconds = int(
+            _skills_cfg.get("script_timeout_seconds", 30)
+        )
+        _skills_script_max_output_chars = int(
+            _skills_cfg.get("script_max_output_chars", 20000)
+        )
 except Exception:
     pass
 
@@ -168,6 +193,39 @@ tool_registry = build_default_registry(config={
     "browser_user_data_dir": _browser_user_data_dir,
     "browser_search_engine": _browser_search_engine,
 })
+
+if _skills_enabled:
+    try:
+        from src.skills.loader import load_skills
+        from src.tools.run_skill_script import RunSkillScriptTool
+        from src.tools.use_skill import UseSkillTool
+
+        _loaded_skills = load_skills(_skills_dirs, root=Path.cwd())
+        tool_registry.register(
+            UseSkillTool(
+                skills=_loaded_skills,
+                listing_max_chars=_skills_listing_max_chars,
+                max_skill_chars=_skills_max_skill_chars,
+            )
+        )
+        tool_registry.register(
+            RunSkillScriptTool(
+                skills=_loaded_skills,
+                default_timeout_seconds=_skills_script_timeout_seconds,
+                max_output_chars=_skills_script_max_output_chars,
+            )
+        )
+        logger.info(
+            "Skills: enabled, loaded=%d, dirs=%s, script_timeout=%ds",
+            len(_loaded_skills),
+            ", ".join(_skills_dirs),
+            _skills_script_timeout_seconds,
+        )
+    except Exception:
+        logger.warning("Skills: failed to initialize", exc_info=True)
+else:
+    logger.info("Skills: disabled")
+
 llm_client = LLMClient(config=model_config)
 context_builder = ContextBuilder()
 memory_store = MemoryStore(base_dir=_memory_base_dir)

@@ -4,6 +4,11 @@
 /cache/
 /browser_data/
 
+# Local/private skills. Keep the public skills directory empty by default.
+/skills/*
+!/skills/.gitkeep
+/.searchclaw/
+
 # Tests and docs (not published)
 tests/
 docs/
