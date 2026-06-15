@@ -28,12 +28,15 @@ class ContextBuilder:
         self,
         tools: list[Tool],
         memory_content: str | None = None,
+        extra_context: str | None = None,
     ) -> str:
         """
         Assemble the full system prompt.
 
         Called once per query loop invocation. Each section is optional —
-        if a section returns empty, it's skipped.
+        if a section returns empty, it's skipped. ``extra_context`` is an
+        optional per-query block (e.g. the CLI's local-search roots note)
+        appended near the end; None preserves the original prompt exactly.
         """
         sections = [
             self._base_prompt(),
@@ -41,6 +44,7 @@ class ContextBuilder:
             self._citation_guidelines(),
             self._research_methodology(),
             self._memory_section(memory_content),
+            extra_context or "",
             self._date_context(),
         ]
         return "\n\n".join(section for section in sections if section)

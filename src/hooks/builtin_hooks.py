@@ -30,6 +30,11 @@ _research_cache: dict[int, bool] = {}
 _RESEARCH_CACHE_MAX_SIZE = 50
 
 
+def _explicit_citations(state: LoopState):
+    """Citations deliberately registered for the final answer."""
+    return [citation for citation in state.citations if citation.cited]
+
+
 def clear_research_cache() -> None:
     """Clear the research classification cache between evaluation cycles."""
     _research_cache.clear()
@@ -147,7 +152,7 @@ class CitationQualityHook(Hook):
         if not await _needs_research(state):
             return HookEvaluation(passed=True)
 
-        num_citations = len(state.citations)
+        num_citations = len(_explicit_citations(state))
 
         if num_citations >= self.min_citations:
             return HookEvaluation(passed=True)
@@ -176,9 +181,10 @@ class CitationQualityHook(Hook):
         return HookEvaluation(
             passed=False,
             feedback=(
-                f"Your answer only cites {num_citations} source(s), but at least "
-                f"{self.min_citations} are needed. Please search for additional sources "
-                f"to support your claims, then cite them using the cite_source tool."
+                f"Your answer only explicitly cites {num_citations} source(s), but at least "
+                f"{self.min_citations} are needed. Search results and fetched pages do not "
+                f"count until you register them with cite_source. Please cite the sources "
+                f"that support your claims, then provide the final answer."
             ),
         )
 
@@ -201,14 +207,16 @@ class SourceDiversityHook(Hook):
         if not await _needs_research(state):
             return HookEvaluation(passed=True)
 
-        if len(state.citations) < 2:
+        cited = _explicit_citations(state)
+
+        if len(cited) < 2:
             # Not enough citations to check diversity — let citation hook handle it
             return HookEvaluation(passed=True)
 
         # Extract unique domains
         from urllib.parse import urlparse
         domains = set()
-        for citation in state.citations:
+        for citation in cited:
             try:
                 domain = urlparse(citation.url).netloc
                 # Normalize: remove www.

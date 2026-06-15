@@ -647,13 +647,13 @@ function safeLink(text, url) {
 }
 
 function iconClass(n) {
-    return { web_search:'search', web_fetch:'fetch', deep_read:'read',
+    return { search_web:'search', fetch_url:'fetch', deep_read:'read',
              cite_source:'cite', academic_search:'academic', news_search:'news',
              research_plan:'plan', ask_user:'ask' }[n] || 'search';
 }
 
 function iconEmoji(n) {
-    return { web_search:'&#128269;', web_fetch:'&#127760;', deep_read:'&#128214;',
+    return { search_web:'&#128269;', fetch_url:'&#127760;', deep_read:'&#128214;',
              cite_source:'&#128220;', academic_search:'&#127891;', news_search:'&#128240;',
              research_plan:'&#128203;', ask_user:'&#10067;' }[n] || '&#9881;';
 }

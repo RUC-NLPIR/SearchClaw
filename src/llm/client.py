@@ -91,6 +91,12 @@ class ModelConfig:
     max_retries: int = 3
     retry_base_delay_ms: int = 500
     reasoning_effort: str = ""  # "minimal", "low", "medium", "high", "xhigh", or "" for default
+    # Stream the underlying LLM call. True = real-time per-token deltas (good
+    # for live UI). False = single-shot response, then emit one consolidated
+    # event per channel (good for batch benchmarks — keeps trace JSONL small
+    # and avoids per-token write+flush overhead). Affects Chat Completions
+    # branch only; Responses-API path is always non-streaming.
+    stream: bool = True
 
     @classmethod
     def from_settings(cls, settings_path: str | Path = "config/settings.yaml") -> ModelConfig:
@@ -119,6 +125,7 @@ class ModelConfig:
                 max_retries=int(llm.get("max_retries", cls.max_retries)),
                 retry_base_delay_ms=int(llm.get("retry_base_delay_ms", cls.retry_base_delay_ms)),
                 reasoning_effort=llm.get("reasoning_effort", "") or "",
+                stream=bool(llm.get("stream", cls.stream)),
             )
         except Exception as e:
             logger.warning(f"Failed to load settings from {path}: {e}, using defaults")
@@ -236,6 +243,7 @@ class LLMClient:
         model: str | None = None,
         max_tokens: int | None = None,
         session_id: str = "",
+        tool_choice: str | dict | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """
         Stream an LLM response, yielding StreamEvents.
@@ -268,30 +276,103 @@ class LLMClient:
         for attempt in range(1, self.config.max_retries + 2):  # +1 for the initial attempt
             try:
                 # Build litellm kwargs
+                use_stream = self.config.stream
                 completion_kwargs: dict = {
                     "model": target_model,
                     "messages": api_messages,
                     "max_tokens": target_max_tokens,
                     "max_completion_tokens": target_max_tokens,
-                    "stream": True,
-                    "stream_options": {"include_usage": True},
                 }
+                if use_stream:
+                    completion_kwargs["stream"] = True
+                    completion_kwargs["stream_options"] = {"include_usage": True}
 
                 # Only include tools if provided — Anthropic rejects
                 # tools=None when conversation history contains tool calls
                 if tools:
                     completion_kwargs["tools"] = tools
+                    if tool_choice is not None:
+                        completion_kwargs["tool_choice"] = tool_choice
 
                 # Apply base_url if configured
                 base_url = self.config.base_url
                 if base_url:
                     completion_kwargs["api_base"] = base_url
 
+                # DeepSeek (V3.1+/V4) supports reasoning_effort via litellm.
+                # Other providers in this branch don't, so gate on prefix.
+                # litellm.drop_params=True is a safety net for any leak.
+                if (self.config.reasoning_effort
+                        and target_model.lower().startswith("deepseek/")):
+                    completion_kwargs["reasoning_effort"] = self.config.reasoning_effort
+
+                # Anthropic Claude 4.5+: enable adaptive thinking via the
+                # native `thinking` kwarg. For model versions LiteLLM hasn't
+                # yet allow-listed (e.g. claude-opus-4.7), litellm.drop_params
+                # silently drops it; once LiteLLM ships support, thinking
+                # starts taking effect automatically — no code change needed.
+                # Tied to reasoning_effort so clearing the config disables
+                # thinking uniformly across providers.
+                if (self.config.reasoning_effort
+                        and target_model.lower().startswith("anthropic/")):
+                    completion_kwargs["thinking"] = {"type": "adaptive"}
+
                 response = await litellm.acompletion(**completion_kwargs)
 
                 # Accumulators for the streamed response
-                current_tool_call: dict | None = None
-                tool_call_args_buffer = ""
+                # Use a dict keyed by tool_call index to handle parallel
+                # tool calls whose argument chunks are interleaved.
+                tool_call_buffers: dict[int, dict] = {}  # index -> {"id", "name", "args"}
+                # Anthropic thinking-mode: accumulate structured thinking blocks
+                # so we can preserve `signature` (encrypted thinking) for
+                # tool-use round-trips. LiteLLM streams these as a list inside
+                # `delta.thinking_blocks`; text comes as deltas, signature
+                # arrives in the final chunk for that block.
+                thinking_blocks_buf: list[dict] = []
+
+                if not use_stream:
+                    # Non-streaming: extract everything from the single message
+                    # and emit one consolidated event per channel.
+                    msg = response.choices[0].message
+                    if getattr(msg, "content", None):
+                        yield StreamEvent(
+                            type=EventType.TEXT_DELTA,
+                            data={"text": msg.content},
+                        )
+                    full_reasoning = getattr(msg, "reasoning_content", None)
+                    if full_reasoning:
+                        yield StreamEvent(
+                            type=EventType.REASONING_DELTA,
+                            data={"text": full_reasoning},
+                        )
+                    # Anthropic thinking blocks (with signature) — emit as a
+                    # single REASONING_BLOCKS event so the loop can attach
+                    # them to the assistant message for round-trip.
+                    msg_blocks = getattr(msg, "thinking_blocks", None) or []
+                    if msg_blocks:
+                        yield StreamEvent(
+                            type=EventType.REASONING_BLOCKS,
+                            data={"blocks": [
+                                {"type": b.get("type", "thinking"),
+                                 "thinking": b.get("thinking", "") or "",
+                                 "signature": b.get("signature", "") or ""}
+                                for b in msg_blocks
+                            ]},
+                        )
+                    for tc in (getattr(msg, "tool_calls", None) or []):
+                        try:
+                            parsed_args = json.loads(tc.function.arguments or "{}")
+                        except (json.JSONDecodeError, AttributeError):
+                            parsed_args = {"raw": getattr(tc.function, "arguments", "")}
+                        yield StreamEvent(
+                            type=EventType.TOOL_USE,
+                            data={
+                                "tool_use_id": tc.id,
+                                "tool_name": tc.function.name,
+                                "tool_input": parsed_args,
+                            },
+                        )
+                    return
 
                 async for chunk in response:
                     delta = chunk.choices[0].delta if chunk.choices else None
@@ -306,45 +387,88 @@ class LLMClient:
                             data={"text": delta.content},
                         )
 
-                    # Tool calls
+                    # Reasoning content (DeepSeek-reasoner thinking-mode trace)
+                    reasoning_chunk = getattr(delta, "reasoning_content", None)
+                    if reasoning_chunk:
+                        yield StreamEvent(
+                            type=EventType.REASONING_DELTA,
+                            data={"text": reasoning_chunk},
+                        )
+
+                    # Anthropic thinking blocks — accumulate by position so
+                    # we end up with the full block list (including the
+                    # encrypted `signature` that arrives on the final chunk).
+                    chunk_blocks = getattr(delta, "thinking_blocks", None) or []
+                    for i, blk in enumerate(chunk_blocks):
+                        # Pad buffer to current index
+                        while len(thinking_blocks_buf) <= i:
+                            thinking_blocks_buf.append(
+                                {"type": "thinking", "thinking": "", "signature": ""}
+                            )
+                        slot = thinking_blocks_buf[i]
+                        # Type may arrive on first chunk only
+                        bt = blk.get("type") if isinstance(blk, dict) else getattr(blk, "type", None)
+                        if bt:
+                            slot["type"] = bt
+                        bthink = blk.get("thinking") if isinstance(blk, dict) else getattr(blk, "thinking", None)
+                        if bthink:
+                            slot["thinking"] += bthink
+                        bsig = blk.get("signature") if isinstance(blk, dict) else getattr(blk, "signature", None)
+                        if bsig:
+                            slot["signature"] = bsig
+
+                    # Tool calls — chunks arrive with an `index` field that
+                    # identifies which parallel tool call they belong to.
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
-                            if tc.function and tc.function.name:
-                                # New tool call starting
-                                if current_tool_call and tool_call_args_buffer:
-                                    # Emit the previous tool call
-                                    try:
-                                        parsed_args = json.loads(tool_call_args_buffer)
-                                    except json.JSONDecodeError:
-                                        parsed_args = {"raw": tool_call_args_buffer}
-                                    yield StreamEvent(
-                                        type=EventType.TOOL_USE,
-                                        data={
-                                            "tool_use_id": current_tool_call["id"],
-                                            "tool_name": current_tool_call["name"],
-                                            "tool_input": parsed_args,
-                                        },
-                                    )
-                                current_tool_call = {
-                                    "id": tc.id or f"call_{id(tc)}",
-                                    "name": tc.function.name,
+                            idx = tc.index if tc.index is not None else 0
+                            # Initialize the buffer the first time we see this
+                            # parallel-call index. Some upstream providers
+                            # (notably LiteLLM proxies with certain backends)
+                            # repeat the `function.name` field on continuation
+                            # chunks. We must NOT re-initialize on those, or
+                            # we wipe the accumulated `args` — which is the
+                            # root cause of empty {} tool inputs reaching the
+                            # tool layer.
+                            if idx not in tool_call_buffers:
+                                tool_call_buffers[idx] = {
+                                    "id": tc.id or f"call_{idx}_{id(tc)}",
+                                    "name": "",
+                                    "args": "",
                                 }
-                                tool_call_args_buffer = tc.function.arguments or ""
-                            elif tc.function and tc.function.arguments:
-                                # Continuing arguments for the current tool call
-                                tool_call_args_buffer += tc.function.arguments
+                            buf = tool_call_buffers[idx]
+                            # Late `id` (rare but seen on some providers)
+                            if tc.id and not buf["id"].startswith("call_"):
+                                pass  # keep existing id
+                            elif tc.id:
+                                buf["id"] = tc.id
+                            if tc.function:
+                                if tc.function.name and not buf["name"]:
+                                    buf["name"] = tc.function.name
+                                if tc.function.arguments:
+                                    buf["args"] += tc.function.arguments
 
-                # Emit the last tool call if any
-                if current_tool_call:
+                # Emit accumulated Anthropic thinking blocks (with signature)
+                # so the loop can attach them to the assistant message for
+                # tool-use round-trip continuity.
+                if thinking_blocks_buf:
+                    yield StreamEvent(
+                        type=EventType.REASONING_BLOCKS,
+                        data={"blocks": thinking_blocks_buf},
+                    )
+
+                # Emit all accumulated tool calls in index order
+                for idx in sorted(tool_call_buffers):
+                    buf = tool_call_buffers[idx]
                     try:
-                        parsed_args = json.loads(tool_call_args_buffer) if tool_call_args_buffer else {}
+                        parsed_args = json.loads(buf["args"]) if buf["args"] else {}
                     except json.JSONDecodeError:
-                        parsed_args = {"raw": tool_call_args_buffer}
+                        parsed_args = {"raw": buf["args"]}
                     yield StreamEvent(
                         type=EventType.TOOL_USE,
                         data={
-                            "tool_use_id": current_tool_call["id"],
-                            "tool_name": current_tool_call["name"],
+                            "tool_use_id": buf["id"],
+                            "tool_name": buf["name"],
                             "tool_input": parsed_args,
                         },
                     )
@@ -518,10 +642,27 @@ class LLMClient:
 
                     elif item_type == "function_call":
                         # Tool call
+                        raw_arguments = getattr(item, "arguments", "")
                         try:
                             parsed_args = json.loads(item.arguments)
                         except (json.JSONDecodeError, AttributeError):
-                            parsed_args = {"raw": getattr(item, "arguments", "")}
+                            parsed_args = {"raw": raw_arguments}
+
+                        # Diagnostic: warn when the model emits an empty-args
+                        # tool call. This is a real model behavior (not a
+                        # parsing bug) but it usually indicates a prompt or
+                        # schema issue worth investigating.
+                        if not parsed_args or (isinstance(parsed_args, dict) and not parsed_args):
+                            logger.warning(
+                                f"Responses API: empty-args tool call "
+                                f"name={item.name} call_id={item.call_id} "
+                                f"raw_arguments={raw_arguments!r}"
+                            )
+
+                        logger.debug(
+                            f"Responses API function_call: name={item.name}, "
+                            f"call_id={item.call_id}, raw_arguments={raw_arguments!r:.200}"
+                        )
 
                         yield StreamEvent(
                             type=EventType.TOOL_USE,
@@ -617,11 +758,20 @@ async def side_query(
     if system:
         kwargs["messages"] = [{"role": "system", "content": system}] + messages
 
+    # Structured-output formatting differs by provider:
+    #   - DeepSeek rejects {type: "json_schema"} ("response_format type is
+    #     unavailable") — it only supports {type: "json_object"}.
+    #   - Most OpenAI-compatible providers accept the richer json_schema.
+    # Pick per-model; the caller always json.loads() with a text fallback, so
+    # the looser json_object is safe where json_schema isn't available.
     if output_schema:
-        kwargs["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {"name": "response", "schema": output_schema},
-        }
+        if target_model.lower().startswith("deepseek/"):
+            kwargs["response_format"] = {"type": "json_object"}
+        else:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": output_schema},
+            }
 
     # Apply base_url: prefer side_query_base_url, fall back to base_url
     base_url = cfg.side_query_base_url or cfg.base_url
@@ -632,6 +782,17 @@ async def side_query(
         response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content or ""
     except Exception as e:
+        # Some endpoints reject any response_format (proxies, older models).
+        # Retry once without it — the prompt itself asks for JSON, and the
+        # caller tolerates non-JSON via a text fallback.
+        if output_schema and "response_format" in kwargs:
+            kwargs.pop("response_format", None)
+            try:
+                response = await litellm.acompletion(**kwargs)
+                return response.choices[0].message.content or ""
+            except Exception as e2:
+                logger.warning(f"Side query failed (after format fallback): {e2}")
+                return ""
         logger.warning(f"Side query failed: {e}")
         return ""
 

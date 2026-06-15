@@ -261,6 +261,19 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
     registry.register(ResearchPlanTool())
     registry.register(AskUserTool())
 
+    # Local-filesystem tools (CLI @path feature). They refuse at call time
+    # unless the query grants roots, so registering them is harmless for the
+    # web path (which never sets allowed_roots).
+    if cfg.get("local_search_enabled", True):
+        from src.tools.local_search import LocalSearchTool
+        from src.tools.local_read import LocalReadTool
+        registry.register(LocalSearchTool(
+            max_results=cfg.get("local_search_max_results", 40),
+        ))
+        registry.register(LocalReadTool(
+            max_result_size_chars=cfg.get("max_result_size_chars", 30000),
+        ))
+
     # Optional tools — register only if dependencies are available
     try:
         from src.tools.academic_search import AcademicSearchTool
@@ -321,17 +334,17 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
 
             # Inject browser manager into tools that support it
             if browser_search_enabled:
-                web_search_tool = registry.get("web_search")
+                web_search_tool = registry.get("search_web")
                 if web_search_tool:
                     web_search_tool._browser_manager = browser_manager
                     web_search_tool._search_engine = browser_config.search_engine
-                    logger.info("Browser search enabled as web_search fallback")
+                    logger.info("Browser search enabled as search_web fallback")
 
             if browser_fetch_enabled:
-                web_fetch_tool = registry.get("web_fetch")
+                web_fetch_tool = registry.get("fetch_url")
                 if web_fetch_tool:
                     web_fetch_tool._browser_manager = browser_manager
-                    logger.info("Browser fetch enabled as web_fetch fallback")
+                    logger.info("Browser fetch enabled as fetch_url fallback")
 
         except ImportError:
             logger.warning(

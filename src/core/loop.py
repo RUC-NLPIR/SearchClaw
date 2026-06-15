@@ -23,6 +23,7 @@ Interactive tools (ask_user):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -78,6 +79,16 @@ class QueryParams:
 
     # Cache directory for oversized tool results
     cache_dir: str = "./cache"
+
+    # Local-search roots the user opted into via @path mentions (CLI only).
+    # Empty by default: tools that read the filesystem refuse unless a root
+    # is present, so the agent never touches disk without explicit opt-in.
+    allowed_roots: list[str] = field(default_factory=list)
+
+    # StreamEvents normally carry a short tool-result preview for the UI.
+    # Batch tracing can opt into full payloads without changing web behavior.
+    tool_result_preview_chars: int = 500
+    stream_full_tool_results: bool = False
 
 
 async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | None]:
@@ -204,6 +215,8 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
         # --- Call LLM ---
         tool_calls: list[dict] = []
         assistant_text_parts: list[str] = []
+        reasoning_text_parts: list[str] = []
+        reasoning_blocks: list[dict] = []  # Anthropic structured blocks (with signature)
         assistant_content_blocks: list[ContentBlock] = []
         llm_error = False  # Track API errors to skip stop hooks
 
@@ -222,6 +235,15 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
                 if event.type == EventType.TEXT_DELTA:
                     text = event.data.get("text", "")
                     assistant_text_parts.append(text)
+
+                elif event.type == EventType.REASONING_DELTA:
+                    reasoning_text_parts.append(event.data.get("text", ""))
+
+                elif event.type == EventType.REASONING_BLOCKS:
+                    # Anthropic-style structured thinking blocks (with
+                    # encrypted signature). Replace any prior accumulation —
+                    # the LLM client emits one consolidated event per turn.
+                    reasoning_blocks = event.data.get("blocks", []) or []
 
                 elif event.type == EventType.TOOL_USE:
                     tool_calls.append(event.data)
@@ -249,9 +271,28 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
 
         # --- Build assistant message for state ---
         full_text = "".join(assistant_text_parts)
+        full_reasoning = "".join(reasoning_text_parts)
+
+        # Build reasoning ContentBlock(s) for round-trip. Prefer Anthropic
+        # structured blocks (carry `signature` for thinking-mode continuity);
+        # fall back to a single text-only block (DeepSeek and others).
+        def _reasoning_blocks_for_history() -> list[ContentBlock]:
+            if reasoning_blocks:
+                return [
+                    ContentBlock(
+                        type="reasoning",
+                        text=blk.get("thinking", "") or "",
+                        signature=blk.get("signature", "") or None,
+                    )
+                    for blk in reasoning_blocks
+                ]
+            if full_reasoning:
+                return [ContentBlock(type="reasoning", text=full_reasoning)]
+            return []
 
         if tool_calls and full_text:
             # Assistant produced both text and tool calls
+            assistant_content_blocks.extend(_reasoning_blocks_for_history())
             assistant_content_blocks.append(
                 ContentBlock(type="text", text=full_text)
             )
@@ -268,6 +309,7 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
             ))
         elif tool_calls:
             # Only tool calls (no text)
+            assistant_content_blocks.extend(_reasoning_blocks_for_history())
             for tc in tool_calls:
                 assistant_content_blocks.append(ContentBlock(
                     type="tool_use",
@@ -280,7 +322,8 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
                 content=assistant_content_blocks,
             ))
         elif full_text:
-            # Only text (no tool calls)
+            # Only text (no tool calls) — final-answer turn.
+            # Reasoning isn't round-tripped further, so drop it.
             state.messages.append(Message(
                 role="assistant",
                 content=full_text,
@@ -315,12 +358,12 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
         _pending_fetch = state.fetch_count
         for tc in tool_calls:
             name = tc["tool_name"]
-            if name in ("web_search", "academic_search", "news_search"):
+            if name in ("search_web", "academic_search", "news_search"):
                 if _pending_search >= params.max_search:
                     skipped_tool_calls.append(tc)
                     continue
                 _pending_search += 1
-            elif name == "web_fetch":
+            elif name == "fetch_url":
                 if _pending_fetch >= params.max_fetch:
                     skipped_tool_calls.append(tc)
                     continue
@@ -343,9 +386,9 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
         # Add "limit reached" results for skipped tool calls
         for tc in skipped_tool_calls:
             name = tc["tool_name"]
-            if name in ("web_search", "academic_search", "news_search"):
+            if name in ("search_web", "academic_search", "news_search"):
                 msg = "Search limit reached. You cannot perform more searches."
-            elif name == "web_fetch":
+            elif name == "fetch_url":
                 msg = "Fetch limit reached. You cannot fetch more pages."
             else:
                 msg = f"{name} limit reached."
@@ -397,13 +440,22 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
                     answer = pending["options"][0]["label"] if pending["options"] else ""
                 result = ToolResult(data=f"User answered: {answer}")
 
-            # Stream result event to UI
+            # Stream result event to UI. By default this is a preview because
+            # full web_fetch payloads can be very large; the complete result is
+            # still appended to state.messages for the next LLM turn.
+            result_text = result.data or ""
+            if params.stream_full_tool_results:
+                streamed_result = result_text
+            else:
+                streamed_result = result_text[: params.tool_result_preview_chars]
             yield StreamEvent(
                 type=EventType.TOOL_RESULT,
                 data={
                     "tool_use_id": tc["tool_use_id"],
                     "tool_name": tc["tool_name"],
-                    "result": result.data[:500] if result.data else "",  # Preview
+                    "result": streamed_result,
+                    "result_chars": len(result_text),
+                    "preview": not params.stream_full_tool_results,
                     "is_error": result.is_error,
                     "truncated": result.truncated,
                 },
@@ -421,9 +473,9 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
 
             # Track per-tool counts for limit guards
             tool_name = tc["tool_name"]
-            if tool_name in ("web_search", "academic_search", "news_search"):
+            if tool_name in ("search_web", "academic_search", "news_search"):
                 state.search_count += 1
-            elif tool_name == "web_fetch":
+            elif tool_name == "fetch_url":
                 state.fetch_count += 1
 
             # Accumulate citations
@@ -463,7 +515,7 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
         if not already_nudged:
             search_count = sum(
                 1 for m in state.messages
-                if m.role == "tool" and m.metadata.get("tool_name") in ("web_search", "academic_search", "news_search")
+                if m.role == "tool" and m.metadata.get("tool_name") in ("search_web", "academic_search", "news_search")
             )
             if state.research_plan is None and search_count >= 3:
                 state.messages.append(Message(
@@ -502,6 +554,9 @@ async def query_loop(params: QueryParams) -> AsyncGenerator[StreamEvent, str | N
     # Only user messages and assistant text are kept — tool messages
     # (research mechanics) are dropped to save context tokens.
     condensed_history = _condense_for_history(state.messages)
+
+    if hasattr(params.llm_client, "reset_response_chain"):
+        params.llm_client.reset_response_chain(session_id=params.session_id)
 
     yield StreamEvent(
         type=EventType.DONE,
@@ -545,6 +600,7 @@ async def _execute_tools(
         extra={
             "loop_state": state,
             "research_query": _extract_research_query(state.messages),
+            "allowed_roots": params.allowed_roots,
         },
         rate_limiter=params.rate_limiter,
     )
@@ -611,9 +667,13 @@ async def _execute_single_tool(
     # Validate input
     validation = tool.validate_input(tool_input)
     if not validation.valid:
-        logger.warning(f"Tool {tool_name} input validation failed: {validation.message}")
+        logger.warning(f"Tool {tool_name} input validation failed: {validation.message} | raw tool_input={tool_input!r}")
         return ToolResult(
-            data=f"Invalid input for {tool_name}: {validation.message}",
+            data=(
+                f"Invalid input for {tool_name}: {validation.message}. "
+                f"You sent: {json.dumps(tool_input)}. "
+                f"Please re-call with the correct required parameters."
+            ),
             is_error=True,
         )
 
@@ -651,71 +711,56 @@ async def _final_answer(
     params: QueryParams,
 ) -> AsyncGenerator[StreamEvent, None]:
     """
-    Make one last LLM call without tools to force a final answer.
+    Make one last LLM call to force a final answer when a guard fires.
 
-    Called when a guard (max_turns) fires while the agent is
-    still mid-research. We build clean messages (no tool_calls/tool roles)
-    to avoid Anthropic API errors, then ask the LLM to synthesize.
+    Mirrors the baseline ReAct approach: keep the full conversation history
+    intact (preserves thinking traces, tool_use/tool_result structure, every
+    page fetched), append a user prompt asking for the answer, and pass
+    `tools=schema` + `tool_choice="none"` so the model is forbidden from
+    calling tools but still sees the schema (this prevents DeepSeek-reasoner
+    from emitting native `<｜DSML｜tool_calls>` literals in the answer text,
+    and satisfies Anthropic's "tools= required when history has tool_use"
+    constraint without dropping any context).
     """
-    # Build clean messages — strip tool_calls from assistant msgs and
-    # convert tool-role results into a single user summary.
-    # This avoids Anthropic's "tools= param required" error when the
-    # conversation contains tool_use blocks but no tools are provided.
-    clean_messages = []
-    tool_findings = []
+    use_responses_api = params.llm_client.uses_responses_api
+    final_max_tokens = min(params.llm_client.config.max_tokens, 16384)
+    final_text_parts: list[str] = []
 
-    for msg in state.messages:
-        if msg.role == "user":
-            clean_messages.append({"role": "user", "content": msg.text_content})
-        elif msg.role == "assistant":
-            text = msg.text_content.strip()
-            if text:
-                clean_messages.append({"role": "assistant", "content": text})
-        elif msg.role == "tool":
-            # Collect tool results as context
-            tool_name = msg.metadata.get("tool_name", "tool")
-            content = msg.text_content[:500]  # Truncate to avoid huge context
-            if content.strip():
-                tool_findings.append(f"[{tool_name}]: {content}")
+    # Responses API (GPT) path: keep the existing chain-reset behaviour.
+    # The previous_response_id mechanism bakes tool definitions into the
+    # chain, so we must reset and rebuild from a flattened summary —
+    # the Chat Completions trick of sending tools+tool_choice="none"
+    # over the original messages doesn't apply here.
+    if use_responses_api and hasattr(params.llm_client, "_response_ids"):
+        clean_messages = []
+        tool_findings = []
+        for msg in state.messages:
+            if msg.role == "user":
+                clean_messages.append({"role": "user", "content": msg.text_content})
+            elif msg.role == "assistant":
+                text = msg.text_content.strip()
+                if text:
+                    clean_messages.append({"role": "assistant", "content": text})
+            elif msg.role == "tool":
+                tool_name = msg.metadata.get("tool_name", "tool")
+                content = msg.text_content[:500]
+                if content.strip():
+                    tool_findings.append(f"[{tool_name}]: {content}")
+        synthesis_msg = ""
+        if tool_findings:
+            recent = tool_findings[-10:]
+            synthesis_msg += "Here is a summary of your research findings:\n\n"
+            synthesis_msg += "\n\n".join(recent)
+            synthesis_msg += "\n\n---\n\n"
+        synthesis_msg += (
+            "You have reached the limit and cannot make any more tool calls. "
+            "Based on the research you have already gathered, please provide "
+            "the best possible answer to the original question now."
+        )
+        clean_messages.append({"role": "user", "content": synthesis_msg})
 
-    # Inject a summary of research findings + synthesis request
-    synthesis_msg = ""
-    if tool_findings:
-        # Keep only the last 10 results to avoid overwhelming context
-        recent = tool_findings[-10:]
-        synthesis_msg += "Here is a summary of your research findings:\n\n"
-        synthesis_msg += "\n\n".join(recent)
-        synthesis_msg += "\n\n---\n\n"
-
-    synthesis_msg += (
-        "You have reached the limit and cannot make any more tool calls. "
-        "Based on the research you have already gathered, please provide "
-        "the best possible answer to the original question now. "
-        "Synthesize all the information you have collected so far."
-    )
-    clean_messages.append({"role": "user", "content": synthesis_msg})
-
-    try:
-        final_text_parts: list[str] = []
-        # For Responses API (GPT models): instead of resetting the chain
-        # and losing all research context, send dummy outputs for any
-        # pending function calls through the existing chain, then the
-        # synthesis message.  This preserves the full conversation state.
-        use_responses_api = params.llm_client.uses_responses_api
-
-        # Use a smaller max_tokens for final synthesis to avoid long waits
-        final_max_tokens = min(params.llm_client.config.max_tokens, 16384)
-
-        if use_responses_api and hasattr(params.llm_client, "_response_ids"):
-            # Reset the chain and start a fresh Responses API call
-            # with no tools.  We must break the chain because the
-            # previous_response_id carries tool definitions forward
-            # and the model will keep calling tools even if we omit
-            # the tools param.  We include research findings in the
-            # prompt so the model still has context to synthesize.
-            params.llm_client.reset_response_chain(session_id=params.session_id)
-
-            # Build a self-contained prompt with system + query + findings
+        params.llm_client.reset_response_chain(session_id=params.session_id)
+        try:
             async for event in params.llm_client.stream(
                 messages=clean_messages,
                 system_prompt=params.system_prompt,
@@ -726,36 +771,54 @@ async def _final_answer(
                 if event.type == EventType.TEXT_DELTA:
                     final_text_parts.append(event.data.get("text", ""))
                 yield event
-        else:
-            # Chat Completions path — reset chain and use clean messages
-            if hasattr(params.llm_client, "reset_response_chain"):
-                params.llm_client.reset_response_chain(session_id=params.session_id)
+        except Exception as e:
+            logger.error(f"Final answer LLM error: {e}")
+            yield StreamEvent(
+                type=EventType.ERROR,
+                data={"message": f"Failed to generate final answer: {str(e)}"},
+            )
+    else:
+        # Chat Completions path (Anthropic, DeepSeek, Azure, copilot-api,
+        # any OpenAI-compatible proxy). Append a user prompt to the existing
+        # message history and let the model answer with the full context.
+        tool_schemas = params.tool_registry.get_api_schemas()
+        state.messages.append(Message(
+            role="user",
+            content=(
+                "You have reached the maximum number of tool uses. "
+                "Please provide your final answer now based on the "
+                "information gathered so far."
+            ),
+        ))
+        api_messages = [msg.to_api_dict() for msg in state.messages]
+        try:
             async for event in params.llm_client.stream(
-                messages=clean_messages,
+                messages=api_messages,
                 system_prompt=params.system_prompt,
-                tools=None,  # No tools — force a text-only response
+                tools=tool_schemas if tool_schemas else None,
+                tool_choice="none" if tool_schemas else None,
                 max_tokens=final_max_tokens,
                 session_id=params.session_id,
             ):
                 if event.type == EventType.TEXT_DELTA:
                     final_text_parts.append(event.data.get("text", ""))
                 yield event
+        except Exception as e:
+            logger.error(f"Final answer LLM error: {e}")
+            yield StreamEvent(
+                type=EventType.ERROR,
+                data={"message": f"Failed to generate final answer: {str(e)}"},
+            )
 
-        # Append the synthesized answer to state so that
-        # state.last_assistant_message reflects the final answer,
-        # not the mid-research reasoning that preceded the guard.
-        final_text = "".join(final_text_parts)
-        if final_text.strip():
-            state.messages.append(Message(
-                role="assistant",
-                content=final_text,
-            ))
-    except Exception as e:
-        logger.error(f"Final answer LLM error: {e}")
-        yield StreamEvent(
-            type=EventType.ERROR,
-            data={"message": f"Failed to generate final answer: {str(e)}"},
-        )
+    # Append the synthesized answer to state so that
+    # state.last_assistant_message reflects the final answer,
+    # not the mid-research reasoning that preceded the guard.
+    final_text = "".join(final_text_parts)
+    if final_text.strip():
+        state.messages.append(Message(
+            role="assistant",
+            content=final_text,
+        ))    
 
 
 def _final_citations_for_answer(
@@ -812,13 +875,13 @@ def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
 def _extract_urls(text: str) -> list[tuple[str, str]]:
     urls: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for match in re.finditer(r"\]\((https?://[^)\s]+)\)", text):
+    for match in re.finditer(r"\]\(((?:https?|file)://[^)\s]+)\)", text):
         raw_url = _clean_url(match.group(1))
         key = _normalize_url(raw_url)
         if key and key not in seen:
             seen.add(key)
             urls.append((key, raw_url))
-    for match in re.finditer(r"https?://[^\s<>\])]+", text):
+    for match in re.finditer(r"(?:https?|file)://[^\s<>\])]+", text):
         raw_url = _clean_url(match.group(0))
         key = _normalize_url(raw_url)
         if key and key not in seen:

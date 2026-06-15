@@ -48,10 +48,10 @@ JINA_READER_URL = "https://r.jina.ai/"
 
 
 class WebFetchTool(Tool):
-    name = "web_fetch"
+    name = "fetch_url"
     description = (
         "Fetch a web page and convert it to readable markdown. "
-        "Use this after web_search to read the full content of a promising result. "
+        "Use this after search_web to read the full content of a promising result. "
         "If the page is too long, it will be truncated and cached — use deep_read "
         "to access specific sections."
     )
@@ -61,13 +61,6 @@ class WebFetchTool(Tool):
             "url": {
                 "type": "string",
                 "description": "The URL of the web page to fetch.",
-            },
-            "target_selector": {
-                "type": "string",
-                "description": (
-                    "Optional CSS selector to extract only specific content "
-                    "(e.g., 'article', '.main-content'). Only works with Jina backend."
-                ),
             },
         },
         "required": ["url"],
@@ -101,9 +94,7 @@ class WebFetchTool(Tool):
             "- Always web_search first, then fetch the most relevant results\n"
             "- If the result says '[Content truncated]', use deep_read with the cached path\n"
             "- Don't fetch pages that are clearly irrelevant based on their title/snippet\n"
-            "- Prefer pages from authoritative sources\n"
-            "- Use target_selector (CSS selector) to extract only the relevant section "
-            "of a page (e.g., 'article', '.post-content') — reduces noise"
+            "- Prefer pages from authoritative sources"
         )
 
     def validate_input(self, args: dict) -> ValidationResult:
@@ -123,7 +114,6 @@ class WebFetchTool(Tool):
 
     async def call(self, args: dict, context: ToolUseContext) -> ToolResult:
         url = args["url"]
-        target_selector = args.get("target_selector")
 
         # Async SSRF check with non-blocking DNS resolution
         is_safe, reason = await validate_url_for_ssrf_async(url)
@@ -150,7 +140,7 @@ class WebFetchTool(Tool):
             await context.rate_limiter.acquire(url)
 
         # --- Strategy 1: Jina Reader API ---
-        jina_result = await self._fetch_via_jina(url, target_selector, context)
+        jina_result = await self._fetch_via_jina(url, context)
         if jina_result is not None:
             return jina_result
 
@@ -171,7 +161,6 @@ class WebFetchTool(Tool):
     async def _fetch_via_jina(
         self,
         url: str,
-        target_selector: str | None,
         context: ToolUseContext,
     ) -> ToolResult | None:
         """
@@ -197,10 +186,6 @@ class WebFetchTool(Tool):
         jina_key = os.environ.get("JINA_API_KEY", "")
         if jina_key:
             headers["Authorization"] = f"Bearer {jina_key}"
-
-        # Target selector — extract only matching elements
-        if target_selector:
-            headers["X-Target-Selector"] = target_selector
 
         # Remove common boilerplate
         headers["X-Remove-Selector"] = "nav, footer, .sidebar, .ads, .cookie-banner"

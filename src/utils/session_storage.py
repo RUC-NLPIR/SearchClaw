@@ -8,12 +8,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SESSION_DIR = Path("./sessions")
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def is_valid_session_id(session_id: str) -> bool:
+    """Return True when session_id is safe to use as a JSON filename stem."""
+    if not isinstance(session_id, str):
+        return False
+    return bool(_SESSION_ID_RE.fullmatch(session_id or ""))
 
 
 class SessionStorage:
@@ -34,6 +43,9 @@ class SessionStorage:
         summary: dict,
     ) -> Path:
         """Save a completed session to disk."""
+        if not is_valid_session_id(session_id):
+            raise ValueError(f"Invalid session_id: {session_id!r}")
+
         session_data = {
             "session_id": session_id,
             "timestamp": datetime.now().isoformat(),
@@ -52,6 +64,10 @@ class SessionStorage:
 
     def load_session(self, session_id: str) -> dict | None:
         """Load a session from disk."""
+        if not is_valid_session_id(session_id):
+            logger.warning(f"Rejected invalid session_id for load: {session_id!r}")
+            return None
+
         path = self.base_dir / f"{session_id}.json"
         if not path.exists():
             return None
@@ -84,6 +100,10 @@ class SessionStorage:
 
     def delete_session(self, session_id: str) -> bool:
         """Delete a session from disk. Returns True if deleted."""
+        if not is_valid_session_id(session_id):
+            logger.warning(f"Rejected invalid session_id for delete: {session_id!r}")
+            return False
+
         path = self.base_dir / f"{session_id}.json"
         if path.exists():
             path.unlink()

@@ -73,12 +73,8 @@ class RunSkillScriptTool(Tool):
         self.max_result_size_chars = max_output_chars
         self.max_args = max_args
         self.max_arg_chars = max_arg_chars
-        self.input_schema["properties"]["timeout_seconds"]["default"] = (
-            self.default_timeout_seconds
-        )
-        self.input_schema["properties"]["timeout_seconds"]["maximum"] = (
-            self.default_timeout_seconds
-        )
+        self.input_schema["properties"]["timeout_seconds"]["default"] = self.default_timeout_seconds
+        self.input_schema["properties"]["timeout_seconds"]["maximum"] = self.default_timeout_seconds
 
     def prompt(self) -> str:
         return (
@@ -221,10 +217,7 @@ class RunSkillScriptTool(Tool):
         if not isinstance(script_args, list):
             return ValidationResult(valid=False, message="args must be an array of strings")
         if len(script_args) > self.max_args:
-            return ValidationResult(
-                valid=False,
-                message=f"args may contain at most {self.max_args} items",
-            )
+            return ValidationResult(valid=False, message=f"args may contain at most {self.max_args} items")
         for i, arg in enumerate(script_args):
             if not isinstance(arg, str):
                 return ValidationResult(valid=False, message=f"args[{i}] must be a string")

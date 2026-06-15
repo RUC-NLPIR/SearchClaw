@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class WebSearchTool(Tool):
-    name = "web_search"
+    name = "search_web"
     description = (
         "Search the web using a search engine API. Returns a list of results "
         "with titles, URLs, and snippets. Use this to find relevant pages, "
-        "then use web_fetch to read the most promising results."
+        "then use fetch_url to read the most promising results."
     )
     input_schema = {
         "type": "object",

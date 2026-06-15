@@ -39,3 +39,8 @@ build/
 
 # Claude Code
 .claude/
+
+# Local benchmark/eval scripts (not published)
+scripts/rescore_widesearch.py
+scripts/widesearch_eval_common.py
+scripts/__init__.py

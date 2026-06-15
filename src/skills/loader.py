@@ -151,10 +151,7 @@ def _split_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
         return {}, body
 
     if not isinstance(parsed, dict):
-        logger.warning(
-            "Skill frontmatter must be a mapping; ignoring %r",
-            type(parsed).__name__,
-        )
+        logger.warning("Skill frontmatter must be a mapping; ignoring %r", type(parsed).__name__)
         return {}, body
 
     return parsed, body

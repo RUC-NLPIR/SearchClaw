@@ -34,7 +34,7 @@ from src.llm.client import LLMClient, ModelConfig, set_shared_config
 from src.memory.retrieval import find_relevant_memories, format_memories_for_prompt
 from src.memory.store import MemoryStore
 from src.utils.rate_limiter import DomainRateLimiter
-from src.utils.session_storage import SessionStorage
+from src.utils.session_storage import SessionStorage, is_valid_session_id
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +153,8 @@ try:
             _skills_dirs = [str(d) for d in _configured_skill_dirs]
         _skills_listing_max_chars = int(_skills_cfg.get("listing_max_chars", 8000))
         _skills_max_skill_chars = int(_skills_cfg.get("max_skill_chars", 50000))
-        _skills_script_timeout_seconds = int(
-            _skills_cfg.get("script_timeout_seconds", 30)
-        )
-        _skills_script_max_output_chars = int(
-            _skills_cfg.get("script_max_output_chars", 20000)
-        )
+        _skills_script_timeout_seconds = int(_skills_cfg.get("script_timeout_seconds", 30))
+        _skills_script_max_output_chars = int(_skills_cfg.get("script_max_output_chars", 20000))
 except Exception:
     pass
 
@@ -201,20 +197,16 @@ if _skills_enabled:
         from src.tools.use_skill import UseSkillTool
 
         _loaded_skills = load_skills(_skills_dirs, root=Path.cwd())
-        tool_registry.register(
-            UseSkillTool(
-                skills=_loaded_skills,
-                listing_max_chars=_skills_listing_max_chars,
-                max_skill_chars=_skills_max_skill_chars,
-            )
-        )
-        tool_registry.register(
-            RunSkillScriptTool(
-                skills=_loaded_skills,
-                default_timeout_seconds=_skills_script_timeout_seconds,
-                max_output_chars=_skills_script_max_output_chars,
-            )
-        )
+        tool_registry.register(UseSkillTool(
+            skills=_loaded_skills,
+            listing_max_chars=_skills_listing_max_chars,
+            max_skill_chars=_skills_max_skill_chars,
+        ))
+        tool_registry.register(RunSkillScriptTool(
+            skills=_loaded_skills,
+            default_timeout_seconds=_skills_script_timeout_seconds,
+            max_output_chars=_skills_script_max_output_chars,
+        ))
         logger.info(
             "Skills: enabled, loaded=%d, dirs=%s, script_timeout=%ds",
             len(_loaded_skills),
@@ -302,7 +294,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="SearchClaw",
         description="A web research agent powered by LLMs",
-        version="0.3.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
 
@@ -624,6 +616,12 @@ def create_app() -> FastAPI:
 
                 # Accept session_id from client (for reconnect continuity)
                 client_session_id = options.get("session_id", "")
+                if client_session_id and not is_valid_session_id(client_session_id):
+                    logger.warning(
+                        f"Rejected invalid client session_id: {client_session_id!r}"
+                    )
+                    client_session_id = ""
+
                 if client_session_id and session_id != client_session_id:
                     session_id = client_session_id
                     # Restore turns and conversation history from saved session

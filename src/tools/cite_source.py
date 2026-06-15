@@ -44,8 +44,8 @@ class CiteSourceTool(Tool):
             },
             "source_type": {
                 "type": "string",
-                "enum": ["web", "academic", "news"],
-                "description": "The type of source (default: 'web').",
+                "enum": ["web", "academic", "news", "local"],
+                "description": "The type of source (default: 'web'). Use 'local' for files read from the user's granted @path roots.",
                 "default": "web",
             },
             "relevance_note": {
@@ -88,6 +88,7 @@ class CiteSourceTool(Tool):
             "web": SourceType.WEB,
             "academic": SourceType.ACADEMIC,
             "news": SourceType.NEWS,
+            "local": SourceType.LOCAL,
         }
         source_type = source_type_map.get(source_type_str, SourceType.WEB)
 

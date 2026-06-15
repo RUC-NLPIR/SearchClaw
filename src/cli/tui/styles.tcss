@@ -1,0 +1,73 @@
+/* SearchClaw TUI layout.
+   Three stacked regions: plan panel (top), chat log (fills), activity panel
+   + input (bottom). Colors echo theme.py: BRAND #00afff, ACCENT #5fd7ff. */
+
+Screen {
+    layout: vertical;
+    background: $background;
+}
+
+#plan-panel {
+    dock: top;
+    height: auto;
+    max-height: 12;
+    padding: 0 1;
+    border: round #0087ff;
+    border-title-color: #00afff;
+    display: none;
+}
+
+#welcome {
+    height: auto;
+    padding: 1 1 0 1;
+}
+
+#chat-log {
+    height: 1fr;
+    padding: 0 1;
+    background: $background;
+    scrollbar-size-vertical: 1;
+}
+
+/* Each entry in the chat log is a mounted child widget. */
+#chat-log .chat-line {
+    height: auto;
+    background: $background;
+}
+
+/* Reports/Sources are real Markdown widgets (clickable links). Trim the
+   default block margins so consecutive entries don't get huge gaps. */
+#chat-log Markdown {
+    height: auto;
+    margin: 0;
+    padding: 0;
+    background: $background;
+}
+
+#activity-panel {
+    dock: bottom;
+    height: auto;
+    max-height: 8;
+    padding: 0 1;
+    color: $text-muted;
+    display: none;
+}
+
+#stream-view {
+    height: 1fr;
+    padding: 0 1;
+    overflow-y: auto;
+    scrollbar-size-vertical: 1;
+    display: none;
+}
+
+#prompt-input {
+    dock: bottom;
+    margin: 0 1 1 1;
+    border: round #00afff;
+    height: auto;
+}
+
+#prompt-input:focus {
+    border: round #5fd7ff;
+}

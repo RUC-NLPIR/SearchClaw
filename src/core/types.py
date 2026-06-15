@@ -22,6 +22,7 @@ class SourceType(str, Enum):
     WEB = "web"
     ACADEMIC = "academic"
     NEWS = "news"
+    LOCAL = "local"
 
 
 @dataclass
@@ -53,9 +54,12 @@ class Citation:
 @dataclass
 class ContentBlock:
     """A single block of content in a message (text, tool_use, tool_result, etc.)."""
-    type: Literal["text", "tool_use", "tool_result"]
-    # For text blocks
+    type: Literal["text", "tool_use", "tool_result", "reasoning"]
+    # For text and reasoning blocks (chain-of-thought from thinking-mode models)
     text: str | None = None
+    # For Anthropic thinking blocks: encrypted-thinking signature that MUST
+    # be round-tripped unchanged on tool-use turns to preserve continuity.
+    signature: str | None = None
     # For tool_use blocks
     tool_name: str | None = None
     tool_use_id: str | None = None
@@ -135,6 +139,31 @@ class Message:
             if tool_calls:
                 msg["tool_calls"] = tool_calls
 
+            # DeepSeek thinking-mode: round-trip the reasoning trace on
+            # assistant turns. litellm.drop_params=True strips it for
+            # providers that don't recognise the field.
+            reasoning_parts = [
+                b.text for b in self.content
+                if b.type == "reasoning" and b.text
+            ]
+            if reasoning_parts:
+                msg["reasoning_content"] = "".join(reasoning_parts)
+
+            # Anthropic thinking-mode: round-trip structured thinking blocks
+            # (with encrypted `signature`) so multi-turn tool use preserves
+            # the thinking chain. LiteLLM's Anthropic provider reads this
+            # field on input messages and translates back to native blocks;
+            # other providers ignore it (drop_params=True is the safety net).
+            thinking_blocks = [
+                {"type": "thinking",
+                 "thinking": b.text or "",
+                 "signature": b.signature or ""}
+                for b in self.content
+                if b.type == "reasoning" and b.signature
+            ]
+            if thinking_blocks:
+                msg["thinking_blocks"] = thinking_blocks
+
             return msg
 
         # Default: simple content
@@ -172,6 +201,10 @@ class ToolResult:
 class EventType(str, Enum):
     # Streaming text from the LLM
     TEXT_DELTA = "text_delta"
+    # Streaming reasoning/thinking trace (DeepSeek-reasoner, Anthropic thinking, etc.)
+    REASONING_DELTA = "reasoning_delta"
+    # Final structured Anthropic thinking blocks (with `signature` for round-trip)
+    REASONING_BLOCKS = "reasoning_blocks"
     # LLM requested a tool call
     TOOL_USE = "tool_use"
     # Tool execution completed
