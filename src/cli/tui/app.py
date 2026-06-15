@@ -392,7 +392,6 @@ class SearchClawApp(App):
             self._log(Text(f"Error: {data.get('message', '')}", style="bold red"))
 
         elif et == EventType.DONE:
-            self._flush_answer()
             self._render_done(data)
 
     def _flush_answer(self) -> None:
@@ -402,10 +401,21 @@ class SearchClawApp(App):
             self._log_markdown(text)
 
     def _render_done(self, data: dict) -> None:
+        # Render the authoritative final answer from the DONE event — it holds
+        # ONLY the last turn's assistant text (loop.py: state.last_assistant_
+        # message). The streaming TEXT_DELTA buffer accumulates every turn,
+        # including the model's between-tool remarks ("let me confirm …"), so
+        # rendering it would splice that reasoning into the answer. Drop the
+        # buffer and use the clean value instead.
+        self._answer_buf.clear()
+        final_answer = (data.get("session_summary") or {}).get("final_answer", "")
+        if final_answer.strip():
+            self._log_markdown(final_answer.strip())
+
         # The model's answer already ends with its own "Sources" section
-        # (rendered by _flush_answer as clickable Markdown), matching the web
-        # UI. So we only show a compact stats line here — rendering the
-        # citation list again would duplicate the sources on screen.
+        # (rendered above as clickable Markdown), matching the web UI. So we
+        # only show a compact stats line here — rendering the citation list
+        # again would duplicate the sources on screen.
         citations = data.get("citations", [])
         turns = data.get("turn_count", 0)
         n = len(citations)
