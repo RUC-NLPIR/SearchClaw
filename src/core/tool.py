@@ -267,6 +267,10 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
     if cfg.get("local_search_enabled", True):
         from src.tools.local_search import LocalSearchTool
         from src.tools.local_read import LocalReadTool
+        from src.tools.local_glob import LocalGlobTool
+        registry.register(LocalGlobTool(
+            max_results=cfg.get("local_glob_max_results", 200),
+        ))
         registry.register(LocalSearchTool(
             max_results=cfg.get("local_search_max_results", 40),
         ))

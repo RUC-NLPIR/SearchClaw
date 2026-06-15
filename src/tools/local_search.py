@@ -126,7 +126,12 @@ class LocalSearchTool(Tool):
         doc_hint = self._document_hint(targets)
 
         if not matches:
-            body = f"No grep matches for '{query}' in plain-text files under the granted roots."
+            body = (
+                f"No grep matches for '{query}' in plain-text files under the "
+                "granted roots. Note grep does not read PDF/Word/PowerPoint — "
+                "use local_glob to list files by name (it sees documents), then "
+                "local_read to open them."
+            )
             return ToolResult(data=body + doc_hint)
 
         lines_out: list[str] = []
