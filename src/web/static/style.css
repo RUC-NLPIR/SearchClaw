@@ -882,6 +882,11 @@ body {
     flex-shrink: 0;
 }
 
+/* Export DOCX button sits next to Copy; only the first action gets the auto-margin */
+.export-btn {
+    margin-left: 8px;
+}
+
 /* ================================================================
    RESEARCH PLAN CHECKLIST
    ================================================================ */

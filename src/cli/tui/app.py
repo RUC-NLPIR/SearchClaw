@@ -50,6 +50,7 @@ SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/model", "show or set the model"),
     ("/effort", "show or set reasoning effort"),
     ("/copy", "copy the last answer to clipboard"),
+    ("/export", "export the last answer: /export <path.docx>"),
     ("/roots", "show local-search dirs"),
     ("/sessions", "list recent sessions"),
     ("/load", "resume a session: /load <n>"),
@@ -502,6 +503,7 @@ class SearchClawApp(App):
                 "  /model     show or set the model\n"
                 "  /effort    show or set reasoning effort: off|low|medium|high|xhigh|max\n"
                 "  /copy      copy the last answer (raw markdown) to clipboard\n"
+                "  /export    export the last answer to DOCX: /export <path.docx>\n"
                 "  /roots     show local-search dirs granted via @path\n"
                 "  /sessions  list recent saved sessions\n"
                 "  /load      resume a past session: /load <n> (after /sessions)\n"
@@ -532,6 +534,8 @@ class SearchClawApp(App):
             self._set_effort(arg)
         elif name == "/copy":
             self._copy_last_answer()
+        elif name == "/export":
+            self._export_last_answer(arg)
         elif name == "/config":
             if self._busy:
                 self._log(Text("Finish the current query before /config.", style="grey50"))
@@ -575,6 +579,28 @@ class SearchClawApp(App):
             self._log(Text(f"Copied last answer ({len(self.sess.last_answer):,} chars) to clipboard.", style="grey50"))
         else:
             self._log(Text("No clipboard tool found (need xclip/xsel/wl-clipboard or pbcopy).", style="grey50"))
+
+    def _export_last_answer(self, arg: str) -> None:
+        if not self.sess.last_answer:
+            self._log(Text("No answer to export yet.", style="grey50"))
+            return
+        path = arg.strip().strip('"').strip("'")
+        if not path or not path.lower().endswith(".docx"):
+            self._log(Text(
+                "Please specify a filename ending in .docx, e.g. /export ~/report.docx",
+                style="grey50",
+            ))
+            return
+        try:
+            from src.utils.docx_export import markdown_to_docx_bytes
+            dest = Path(path).expanduser()
+            docx_bytes = markdown_to_docx_bytes(self.sess.last_answer)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(docx_bytes)
+        except Exception as exc:
+            self._log(Text(f"Export failed: {exc}", style="grey50"))
+        else:
+            self._log(Text(f"Exported last answer to {dest}", style="grey50"))
 
     def action_copy_selection(self) -> None:
         """Copy the current drag-selection to the system clipboard (Ctrl+Y).

@@ -17,10 +17,11 @@ import os
 import time as _time
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -35,6 +36,7 @@ from src.memory.retrieval import find_relevant_memories, format_memories_for_pro
 from src.memory.store import MemoryStore
 from src.utils.rate_limiter import DomainRateLimiter
 from src.utils.session_storage import SessionStorage, is_valid_session_id
+from src.utils.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx_bytes, safe_docx_filename
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +414,38 @@ def create_app() -> FastAPI:
         return JSONResponse(
             content={"error": "Session not found"},
             status_code=404,
+        )
+
+    @app.post("/api/export/docx")
+    async def export_docx(request: Request):
+        """Convert a Markdown report to a downloadable DOCX file."""
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+
+        markdown = (body.get("markdown") or "").strip()
+        if not markdown:
+            return JSONResponse(status_code=400, content={"error": "markdown is required"})
+        if len(markdown) > 500_000:
+            return JSONResponse(status_code=400, content={"error": "Content too large to export."})
+
+        title = body.get("title") or "research-report"
+        try:
+            docx_bytes = markdown_to_docx_bytes(markdown)
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+        except Exception as exc:
+            logger.error("DOCX export failed: %s", exc, exc_info=True)
+            return JSONResponse(status_code=500, content={"error": f"DOCX export failed: {exc}"})
+
+        filename = safe_docx_filename(title)
+        return Response(
+            content=docx_bytes,
+            media_type=DOCX_MEDIA_TYPE,
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            },
         )
 
     @app.post("/api/query")

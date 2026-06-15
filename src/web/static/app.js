@@ -240,14 +240,9 @@ function onDone(d) {
         sourcesText.textContent = `${finalCitations.length} sources`;
         s.appendChild(sourcesText);
 
-        // Copy button — copies only the final prose (raw markdown), not tool/status blocks
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'copy-btn';
-        copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
         // Capture the assistant element for the closure
         const assistantEl = currentAssistantEl;
-        copyBtn.onclick = () => copyResponseMarkdown(assistantEl, copyBtn);
-        s.appendChild(copyBtn);
+        appendResponseActions(s, assistantEl);
 
         currentAssistantEl.appendChild(s);
     }
@@ -402,6 +397,97 @@ function copyResponseMarkdown(assistantEl, btn) {
     } else {
         fallbackCopy();
     }
+}
+
+function lastProseMarkdown(assistantEl) {
+    // The LAST non-empty prose block is the final synthesized answer.
+    const proseEls = assistantEl.querySelectorAll('.assistant-prose');
+    for (let i = proseEls.length - 1; i >= 0; i--) {
+        const raw = (proseEls[i]._raw || '').trim();
+        if (raw) return raw;
+    }
+    return '';
+}
+
+// Append Copy + Export DOCX buttons to a stats bar, bound to an assistant block.
+function appendResponseActions(statsBar, assistantEl) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
+    copyBtn.onclick = () => copyResponseMarkdown(assistantEl, copyBtn);
+    statsBar.appendChild(copyBtn);
+
+    const exportBtn = document.createElement('button');
+    exportBtn.className = 'copy-btn export-btn';
+    exportBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Export DOCX</span>';
+    exportBtn.onclick = () => exportResponseDocx(assistantEl, exportBtn);
+    statsBar.appendChild(exportBtn);
+}
+
+function exportResponseDocx(assistantEl, btn) {
+    const markdown = lastProseMarkdown(assistantEl);
+    if (!markdown || btn.disabled) return;
+
+    const label = btn.querySelector('span');
+    const oldText = label ? label.textContent : '';
+    btn.disabled = true;
+    if (label) label.textContent = 'Exporting...';
+
+    fetch('/api/export/docx', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markdown, title: 'research-report' }),
+    })
+        .then(async response => {
+            if (!response.ok) {
+                let message = `HTTP ${response.status}`;
+                try {
+                    const data = await response.json();
+                    message = data.error || message;
+                } catch (_) {}
+                throw new Error(message);
+            }
+            const blob = await response.blob();
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const filename = filenameFromDisposition(disposition) || 'research-report.docx';
+            downloadBlob(blob, filename);
+            btn.classList.add('copied');
+            if (label) label.textContent = 'Exported';
+            setTimeout(() => btn.classList.remove('copied'), 2000);
+        })
+        .catch(error => {
+            console.warn('DOCX export failed:', error);
+            if (label) label.textContent = 'Export failed';
+            setTimeout(() => {
+                if (label) label.textContent = oldText || 'Export DOCX';
+            }, 2200);
+        })
+        .finally(() => {
+            setTimeout(() => {
+                btn.disabled = false;
+                if (label && label.textContent !== 'Export failed') {
+                    label.textContent = oldText || 'Export DOCX';
+                }
+            }, 800);
+        });
+}
+
+function filenameFromDisposition(disposition) {
+    const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8) return decodeURIComponent(utf8[1]);
+    const ascii = disposition.match(/filename="?([^";]+)"?/i);
+    return ascii ? ascii[1] : '';
+}
+
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
 }
 
 // ── Submission ──
@@ -767,7 +853,6 @@ function loadSession(sessionId) {
 
             // Render all turns (backward-compatible with old single-turn sessions)
             const turns = data.turns || [{ query: data.query, final_answer: data.final_answer }];
-            let lastAssistEl = null;
 
             for (const turn of turns) {
                 // Render user query
@@ -795,25 +880,26 @@ function loadSession(sessionId) {
                     proseEl.innerHTML = mdFinal(turn.final_answer);
                     assistEl.appendChild(proseEl);
 
+                    // Per-turn actions bar (Copy + Export DOCX)
+                    const actions = document.createElement('div');
+                    actions.className = 'stats-bar';
+                    if (typeof turn.turn_count === 'number') {
+                        const t = document.createElement('span');
+                        t.textContent = `${turn.turn_count} turns`;
+                        actions.appendChild(t);
+                    }
+                    if (typeof turn.num_citations === 'number') {
+                        const c = document.createElement('span');
+                        c.textContent = `${turn.num_citations} sources`;
+                        actions.appendChild(c);
+                    }
+                    appendResponseActions(actions, assistEl);
+                    assistEl.appendChild(actions);
+
                     messagesEl.appendChild(assistEl);
-                    lastAssistEl = assistEl;
                 }
             }
 
-            // Stats bar on the last assistant block
-            if (lastAssistEl) {
-                const numCitations = data.num_citations || 0;
-                const turnCount = data.turn_count || 0;
-                const statsEl = document.createElement('div');
-                statsEl.className = 'stats-bar';
-                statsEl.innerHTML = `
-                    <span>${turnCount} turns</span>
-                    <span>${numCitations} sources</span>
-                `;
-                lastAssistEl.appendChild(statsEl);
-            }
-
-            // Continue this session if user sends a follow-up query
             currentSessionId = sessionId;
             pendingNewChat = false;
             conversation.scrollTop = 0;
