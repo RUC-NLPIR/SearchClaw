@@ -133,17 +133,32 @@ def build_runtime(settings: dict[str, Any]) -> Runtime:
     # Skills (same pattern as router.py:193-219)
     if bool(skills_cfg.get("enabled", True)):
         try:
+            from src.cli.config import CONFIG_DIR
             from src.skills.loader import load_skills
             from src.tools.run_skill_script import RunSkillScriptTool
             from src.tools.use_skill import UseSkillTool
 
-            configured_dirs = skills_cfg.get("dirs", ["./skills"])
+            configured_dirs = skills_cfg.get("dirs", [str(CONFIG_DIR / "skills")])
             if isinstance(configured_dirs, str):
                 skill_dirs = [d.strip() for d in configured_dirs.split(",") if d.strip()]
             else:
                 skill_dirs = [str(d) for d in configured_dirs]
 
-            loaded_skills = load_skills(skill_dirs, root=Path.cwd())
+            # The CLI runs from any directory, so relative skill dirs must NOT
+            # anchor to the (arbitrary) cwd. Anchor them to ~/.searchclaw so
+            # skills load regardless of where `searchclaw` was launched, and
+            # always include the user-level skills dir as a default.
+            user_skills = str(CONFIG_DIR / "skills")
+            resolved_dirs: list[str] = []
+            for d in skill_dirs:
+                p = Path(d).expanduser()
+                if not p.is_absolute():
+                    p = CONFIG_DIR / p
+                resolved_dirs.append(str(p))
+            if user_skills not in resolved_dirs:
+                resolved_dirs.insert(0, user_skills)
+
+            loaded_skills = load_skills(resolved_dirs, root=CONFIG_DIR)
             tool_registry.register(UseSkillTool(
                 skills=loaded_skills,
                 listing_max_chars=int(skills_cfg.get("listing_max_chars", 8000)),
@@ -154,7 +169,7 @@ def build_runtime(settings: dict[str, Any]) -> Runtime:
                 default_timeout_seconds=int(skills_cfg.get("script_timeout_seconds", 30)),
                 max_output_chars=int(skills_cfg.get("script_max_output_chars", 20000)),
             ))
-            logger.info("Skills: loaded %d", len(loaded_skills))
+            logger.info("Skills: loaded %d from %s", len(loaded_skills), resolved_dirs)
         except Exception:
             logger.warning("Skills: failed to initialize", exc_info=True)
 

@@ -150,7 +150,7 @@ def _default_settings() -> dict[str, Any]:
         },
         "skills": {
             "enabled": True,
-            "dirs": ["./skills"],
+            "dirs": [str(CONFIG_DIR / "skills")],
             "listing_max_chars": 8000,
             "max_skill_chars": 50000,
             "script_timeout_seconds": 30,
