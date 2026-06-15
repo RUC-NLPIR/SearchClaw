@@ -238,3 +238,15 @@ class ChatLog(VerticalScroll):
         """Remove all entries."""
         for child in list(self.children):
             child.remove()
+
+    def mount_live(self) -> Static:
+        """Mount an empty Static for streaming text and return it.
+
+        The caller updates it via ``.update(...)`` as deltas arrive, then
+        removes it (intermediate text) or leaves it (final). Kept separate
+        from ``write`` because the caller needs the widget handle.
+        """
+        child = Static(Text(""), classes="chat-line stream-line")
+        self.mount(child)
+        self.scroll_end(animate=False)
+        return child

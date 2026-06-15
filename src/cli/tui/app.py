@@ -166,6 +166,10 @@ class SearchClawApp(App):
         self._busy = False
         # Per-turn accumulators.
         self._answer_buf: list[str] = []
+        # The Static widget that streams the current text block live, plus the
+        # text accumulated into it. Reset to None between blocks.
+        self._live_widget = None
+        self._live_buf: list[str] = []
         # The startup logo lives in its own widget and is removed the first
         # time the user submits anything.
         self._welcome_shown = False
@@ -277,6 +281,8 @@ class SearchClawApp(App):
     async def run_research(self, query: str) -> None:
         self._busy = True
         self._answer_buf.clear()
+        self._live_widget = None
+        self._live_buf = []
         activity = self.query_one("#activity-panel", ActivityPanel)
         activity.begin()
 
@@ -297,12 +303,13 @@ class SearchClawApp(App):
                     continue
                 self._render_event(event)
                 # Let Textual repaint. Without yielding, a dense stream of
-                # events keeps the worker busy and the activity/plan panels
-                # never repaint until the turn ends. Throttle text deltas so
-                # the status line still updates without yielding on every char.
+                # events keeps the worker busy and panels never repaint until
+                # the turn ends. Yield frequently during text streaming so the
+                # live answer block paints near character-by-character; yield on
+                # every non-text event too.
                 if event.type == EventType.TEXT_DELTA:
                     delta_since_yield += 1
-                    if delta_since_yield >= 8:
+                    if delta_since_yield >= 2:
                         delta_since_yield = 0
                         await asyncio.sleep(0)
                 else:
@@ -339,12 +346,18 @@ class SearchClawApp(App):
             text = data.get("text", "")
             if text:
                 self._answer_buf.append(text)
+                self._stream_delta(text)
                 activity.set_status("composing answer…")
 
         elif et == EventType.REASONING_DELTA:
             activity.set_status("thinking…")
 
         elif et == EventType.TOOL_USE:
+            # Text emitted before a tool call is the model's between-step
+            # reasoning ("let me confirm…"), not the answer. Drop the live
+            # block so it doesn't linger above the tool activity or bleed into
+            # the final report.
+            self._discard_live()
             name = data.get("tool_name", "?")
             icon, color = tool_style(name)
             args = _summarize_args(data.get("tool_input", {}))
@@ -388,11 +401,32 @@ class SearchClawApp(App):
                 activity.set_status(msg)
 
         elif et == EventType.ERROR:
+            self._discard_live()
             self._flush_answer()
             self._log(Text(f"Error: {data.get('message', '')}", style="bold red"))
 
         elif et == EventType.DONE:
             self._render_done(data)
+
+    def _stream_delta(self, text: str) -> None:
+        """Append a text delta to the live streaming block, creating it lazily."""
+        chat = self.query_one("#chat-log", ChatLog)
+        if self._live_widget is None:
+            self._live_widget = chat.mount_live()
+            self._live_buf = []
+        self._live_buf.append(text)
+        self._live_widget.update(Text("".join(self._live_buf)))
+        chat.scroll_end(animate=False)
+
+    def _discard_live(self) -> None:
+        """Remove the live streaming block (intermediate, pre-tool text)."""
+        if self._live_widget is not None:
+            try:
+                self._live_widget.remove()
+            except Exception:
+                pass
+            self._live_widget = None
+            self._live_buf = []
 
     def _flush_answer(self) -> None:
         text = "".join(self._answer_buf).strip()
@@ -401,12 +435,12 @@ class SearchClawApp(App):
             self._log_markdown(text)
 
     def _render_done(self, data: dict) -> None:
-        # Render the authoritative final answer from the DONE event — it holds
-        # ONLY the last turn's assistant text (loop.py: state.last_assistant_
-        # message). The streaming TEXT_DELTA buffer accumulates every turn,
-        # including the model's between-tool remarks ("let me confirm …"), so
-        # rendering it would splice that reasoning into the answer. Drop the
-        # buffer and use the clean value instead.
+        # Drop the live streaming block (raw text). We re-render the answer as
+        # proper Markdown below from the authoritative final_answer in the DONE
+        # event — it holds ONLY the last turn's assistant text (loop.py:
+        # state.last_assistant_message). The streaming buffer accumulates every
+        # turn, including between-tool remarks, so we never render it as final.
+        self._discard_live()
         self._answer_buf.clear()
         final_answer = (data.get("session_summary") or {}).get("final_answer", "")
         if final_answer.strip():
