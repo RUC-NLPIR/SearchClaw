@@ -420,7 +420,11 @@ class SearchClawApp(App):
                 "  /verbose   toggle reasoning output\n"
                 "  /exit      quit\n"
                 "@path grants local search for a dir/file (e.g. @~/docs what does X say)\n"
-                "Drag to select text, then Ctrl+Y to copy the selection.",
+                "Copying text:\n"
+                "  - Drag to select, then Ctrl+Y to copy the selection\n"
+                "  - /copy copies the full last answer\n"
+                "  - Native Cmd+C/Ctrl+C: hold Option (mac) or Shift (Linux/Win)\n"
+                "    while dragging to select in the terminal itself, then copy",
                 style="grey62",
             ))
         elif name == "/clear":
