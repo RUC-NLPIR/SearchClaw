@@ -19,7 +19,7 @@ dependencies = [
     "rich>=13.0",
     "textual>=0.80",
     "pdfplumber>=0.11",
-    "pypandoc>=1.13",
+    "pypandoc_binary>=1.13",
 ]
 
 [project.scripts]
