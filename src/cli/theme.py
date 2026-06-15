@@ -64,13 +64,14 @@ TOOL_STYLE: dict[str, tuple[str, str]] = {
     "wechat_search": ("💬", ACCENT),
     "fetch_url": ("📄", BRAND),
     "deep_read": ("🔬", BRAND),
+    "local_glob": ("📂", ACCENT),
     "local_search": ("📁", ACCENT),
     "local_read": ("📄", BRAND),
     "cite_source": ("📌", SUCCESS),
-    "research_plan": ("🗂", WARNING),
+    "research_plan": ("📋", WARNING),
     "ask_user": ("❓", WARNING),
     "use_skill": ("🧩", BRAND_DIM),
-    "run_skill_script": ("⚙", BRAND_DIM),
+    "run_skill_script": ("🔧", BRAND_DIM),
 }
 _DEFAULT_TOOL = ("⏺", ACCENT)
 
