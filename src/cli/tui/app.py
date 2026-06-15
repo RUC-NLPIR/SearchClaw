@@ -163,6 +163,9 @@ class SearchClawApp(App):
             self._answer_future.set_result(text)
             return
 
+        self._submit_text(text)
+
+    def _submit_text(self, text: str) -> None:
         # First real input dismisses the startup banner.
         self._dismiss_welcome()
 
@@ -176,8 +179,21 @@ class SearchClawApp(App):
 
         # Pull @path mentions: grant local-search roots, strip from the query.
         cleaned, new_roots, new_focus, warnings = parse_mentions(text)
-        for w in warnings:
-            self._log(Text(f"! {w}", style="yellow"))
+
+        # An unresolved @path is almost always a typo or a directory the user
+        # expected to exist. Hard-stop the turn: report which path is missing
+        # and make the user fix the input. We do NOT fall back to a web-only
+        # search, because dropping the local root silently changes the answer.
+        if warnings:
+            for w in warnings:
+                self._log(Text(f"! {w}", style="yellow"))
+            self._log(Text(
+                "Path not found — nothing was searched. Re-enter your question "
+                "with a correct @path (or remove the @ to search the web).",
+                style="bold yellow",
+            ))
+            return
+
         if new_roots:
             added = [r for r in new_roots if r not in self.sess.allowed_roots]
             self.sess.allowed_roots.extend(added)
@@ -186,12 +202,14 @@ class SearchClawApp(App):
                     self.sess.focus_files.append(f)
             if added:
                 self._log(Text("Local search enabled for: " + ", ".join(added), style="grey50"))
-        query = cleaned if (new_roots or warnings) else text
+        query = cleaned if new_roots else text
+
         if not query:
             return
 
-        # Echo the user turn, then run.
-        self._log_user(query)
+        # Echo the user's *original* input (with the @path) so what they typed
+        # stays visible, but send the cleaned query (without the @) to the model.
+        self._log_user(text)
         self.run_research(query)
 
     # --- the research worker ----------------------------------------
