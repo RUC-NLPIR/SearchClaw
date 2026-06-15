@@ -215,17 +215,20 @@ class ChatLog(VerticalScroll):
     the browser. Plain lines (Text/str) are mounted as ``Static``.
     """
 
-    def write(self, renderable, scroll: bool = True) -> None:
+    def write(self, renderable, scroll: bool = True, classes: str = "") -> None:
         """Mount a renderable as a new child.
 
         - a Textual ``Widget`` (e.g. a ``Markdown``) is mounted as-is
         - a rich ``Text`` / ``str`` becomes a ``Static`` line
+        - ``classes`` adds extra CSS classes to a Static line (e.g. to give
+          user turns a distinct background)
         """
         if isinstance(renderable, Widget):
             child = renderable
         else:
             content = renderable if renderable != "" else Text("")
-            child = Static(content, classes="chat-line")
+            line_classes = f"chat-line {classes}".strip()
+            child = Static(content, classes=line_classes)
         self.mount(child)
         if scroll:
             self.scroll_end(animate=False)

@@ -35,6 +35,14 @@ Screen {
     background: $background;
 }
 
+/* User turns get a faint grey background so they stand out from model
+   replies as the eye scans the transcript. */
+#chat-log .user-line {
+    background: #2a2a2a;
+    padding: 0 1;
+    margin: 1 0;
+}
+
 /* Reports/Sources are real Markdown widgets (clickable links). Trim the
    default block margins so consecutive entries don't get huge gaps. */
 #chat-log Markdown {

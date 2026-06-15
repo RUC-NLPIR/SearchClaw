@@ -675,7 +675,7 @@ class SearchClawApp(App):
     def _log_user(self, text: str) -> None:
         line = Text("❯ ", style=f"bold {SUCCESS}")
         line.append(text, style="bold white")
-        self._log(line)
+        self.query_one("#chat-log", ChatLog).write(line, classes="user-line")
 
     # --- exit: replay last report to the real terminal --------------
 
