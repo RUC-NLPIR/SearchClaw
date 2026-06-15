@@ -41,6 +41,35 @@ logging.getLogger("litellm").setLevel(logging.ERROR)
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 logging.getLogger("pdfplumber").setLevel(logging.ERROR)
 
+
+def _redirect_logging_to_file() -> None:
+    """Send all logging to a file instead of the terminal for the TUI.
+
+    The TUI is a full-screen Textual app that owns the screen. The default
+    stderr StreamHandler writes log records straight to the terminal, bypassing
+    Textual's renderer — a fallback warning (e.g. "Jina timeout …") then lands
+    on top of the input box and Textual never repaints it away. Swapping the
+    root handlers for a file handler keeps the screen clean; `tail -f` the log
+    when diagnosis is needed.
+    """
+    from src.cli.config import CONFIG_DIR
+
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(CONFIG_DIR / "tui.log", encoding="utf-8")
+    except OSError:
+        # If the log file can't be opened, drop records entirely rather than
+        # let them fall back to stderr and corrupt the TUI.
+        root.addHandler(logging.NullHandler())
+        return
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    root.addHandler(file_handler)
+
 console = Console(theme=THEME)
 
 
@@ -56,7 +85,9 @@ async def _async_main() -> None:
     cli_config.apply_env_from_config(cfg)
     runtime = build_runtime(cfg)
     # The setup wizard above runs on plain stdin/stdout; the interactive REPL
-    # is a full-screen Textual TUI.
+    # is a full-screen Textual TUI. Redirect logging to a file first so library
+    # warnings (Jina fallbacks, etc.) don't write over the Textual screen.
+    _redirect_logging_to_file()
     from src.cli.tui.app import SearchClawApp
     app = SearchClawApp(runtime)
     try:

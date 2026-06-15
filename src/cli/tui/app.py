@@ -46,6 +46,7 @@ EFFORT_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/help", "show commands"),
     ("/clear", "start a new conversation"),
+    ("/stop", "interrupt the current research turn"),
     ("/config", "re-run the setup wizard"),
     ("/model", "show or set the model"),
     ("/effort", "show or set reasoning effort"),
@@ -165,6 +166,8 @@ class SearchClawApp(App):
         # agent asks the user a question.
         self._answer_future: asyncio.Future[str] | None = None
         self._busy = False
+        # Handle to the in-flight research worker, so /stop can cancel it.
+        self._research_worker = None
         # Per-turn accumulators.
         self._answer_buf: list[str] = []
         # The Static widget that streams the current text block live, plus the
@@ -222,12 +225,36 @@ class SearchClawApp(App):
         if isinstance(event.input, HistoryInput):
             event.input.add_history(text)
 
+        # /stop interrupts the in-flight turn. It must run before the
+        # answer-future and busy paths below, since those would otherwise treat
+        # it as an answer or a queued query while a turn is mid-flight.
+        if text.lower() in ("/stop", "/cancel"):
+            self._stop_research()
+            return
+
         # If the agent is waiting on a question, this input answers it.
         if self._answer_future is not None and not self._answer_future.done():
             self._answer_future.set_result(text)
             return
 
         self._submit_text(text)
+
+    def _stop_research(self) -> None:
+        """Cancel the in-flight research turn (triggered by /stop).
+
+        Cancelling the worker raises CancelledError inside run_research at its
+        next await point (LLM stream or tool call); that handler keeps the
+        partial answer and resets state. If the turn is paused on a user
+        question, resolve that future first so the worker resumes and unwinds.
+        """
+        worker = self._research_worker
+        if worker is None or not self._busy:
+            self._log(Text("Nothing is running.", style="grey50"))
+            return
+        if self._answer_future is not None and not self._answer_future.done():
+            self._answer_future.set_result("")
+            self._answer_future = None
+        worker.cancel()
 
     def _submit_text(self, text: str) -> None:
         # First real input dismisses the startup banner.
@@ -274,7 +301,7 @@ class SearchClawApp(App):
         # Echo the user's *original* input (with the @path) so what they typed
         # stays visible, but send the cleaned query (without the @) to the model.
         self._log_user(text)
-        self.run_research(query)
+        self._research_worker = self.run_research(query)
 
     # --- the research worker ----------------------------------------
 
@@ -322,6 +349,18 @@ class SearchClawApp(App):
                     final_messages = event.data.get("final_messages")
         except StopAsyncIteration:
             pass
+        except asyncio.CancelledError:
+            # /stop cancelled this worker. Keep whatever was streamed so far as
+            # a permanent block, mark it interrupted, and skip finalize_turn —
+            # an aborted turn has no complete answer to record in history.
+            self._discard_live()
+            self._flush_answer()
+            self._log(Text("⨯ Stopped.", style="yellow"))
+            activity.clear()
+            self.query_one("#plan-panel", PlanPanel).collapse()
+            self._busy = False
+            self._research_worker = None
+            return
         except Exception as e:  # surface worker errors instead of silent death
             self._log(Text(f"Error: {e}", style="bold red"))
         finally:
@@ -330,6 +369,7 @@ class SearchClawApp(App):
             # screen; its data is kept and the next turn re-shows it.
             self.query_one("#plan-panel", PlanPanel).collapse()
             self._busy = False
+            self._research_worker = None
 
         finalize_turn(self.sess, query, session_summary, done_data, final_messages)
 
@@ -499,6 +539,7 @@ class SearchClawApp(App):
             self._log(Text(
                 "Commands\n"
                 "  /clear     start a new conversation\n"
+                "  /stop      interrupt the current research turn\n"
                 "  /config    re-run the setup wizard (endpoint, models, keys)\n"
                 "  /model     show or set the model\n"
                 "  /effort    show or set reasoning effort: off|low|medium|high|xhigh|max\n"
