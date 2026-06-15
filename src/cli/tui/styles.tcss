@@ -45,19 +45,10 @@ Screen {
 }
 
 #activity-panel {
-    dock: bottom;
     height: auto;
     max-height: 8;
     padding: 0 1;
     color: $text-muted;
-    display: none;
-}
-
-#stream-view {
-    height: 1fr;
-    padding: 0 1;
-    overflow-y: auto;
-    scrollbar-size-vertical: 1;
     display: none;
 }
 

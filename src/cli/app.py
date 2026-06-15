@@ -35,6 +35,11 @@ from src.cli.theme import THEME
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("litellm").setLevel(logging.ERROR)
+# pdfminer (under pdfplumber) logs benign per-font warnings such as "Could not
+# get FontBBox …" when a PDF's font descriptor is malformed. Text extraction
+# still works; silence them so they don't corrupt the full-screen TUI.
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
+logging.getLogger("pdfplumber").setLevel(logging.ERROR)
 
 console = Console(theme=THEME)
 

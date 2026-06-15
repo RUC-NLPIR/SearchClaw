@@ -36,7 +36,7 @@ from src.cli.mentions import parse_mentions
 from src.cli.query import CLISession, build_query_params, finalize_turn
 from src.cli.runtime import Runtime, build_runtime
 from src.cli.theme import ACCENT, SUCCESS, tool_style
-from src.cli.tui.widgets import ActivityPanel, ChatLog, PlanPanel, StreamView, WelcomeBanner
+from src.cli.tui.widgets import ActivityPanel, ChatLog, PlanPanel, WelcomeBanner
 from src.core.loop import query_loop
 from src.core.types import EventType
 
@@ -100,6 +100,7 @@ class SearchClawApp(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", show=False),
         Binding("ctrl+d", "quit", "Quit", show=False),
+        Binding("ctrl+y", "copy_selection", "Copy selection", show=False),
     ]
 
     def __init__(self, runtime: Runtime, verbose: bool = False):
@@ -124,7 +125,6 @@ class SearchClawApp(App):
         yield PlanPanel(id="plan-panel")
         yield WelcomeBanner(id="welcome")
         yield ChatLog(id="chat-log")
-        yield StreamView(id="stream-view")
         yield ActivityPanel(id="activity-panel")
         yield Input(
             placeholder="Ask a research question…  (@path for local files, /help)",
@@ -135,7 +135,6 @@ class SearchClawApp(App):
     def on_mount(self) -> None:
         self.query_one("#plan-panel", PlanPanel).display = False
         self.query_one("#activity-panel", ActivityPanel).display = False
-        self.query_one("#stream-view", StreamView).display = False
         cfg = self.sess.runtime.llm_client.config
         self.query_one("#welcome", WelcomeBanner).set_model(cfg.default_model)
         self._welcome_shown = True
@@ -203,7 +202,6 @@ class SearchClawApp(App):
         self._answer_buf.clear()
         activity = self.query_one("#activity-panel", ActivityPanel)
         activity.begin()
-        self.query_one("#stream-view", StreamView).begin()
 
         params = await build_query_params(self.sess, query)
         session_summary = None
@@ -221,11 +219,10 @@ class SearchClawApp(App):
                     sent_value = await self._ask_user(event.data)
                     continue
                 self._render_event(event)
-                # Let Textual actually repaint. Without yielding, a dense
-                # stream of events (e.g. text deltas) keeps the worker busy and
-                # the UI — including the plan panel — never repaints until the
-                # turn ends. Yield on every structural event, and throttle
-                # text deltas so the stream stays fast but still visible.
+                # Let Textual repaint. Without yielding, a dense stream of
+                # events keeps the worker busy and the activity/plan panels
+                # never repaint until the turn ends. Throttle text deltas so
+                # the status line still updates without yielding on every char.
                 if event.type == EventType.TEXT_DELTA:
                     delta_since_yield += 1
                     if delta_since_yield >= 8:
@@ -244,10 +241,6 @@ class SearchClawApp(App):
             self._log(Text(f"Error: {e}", style="bold red"))
         finally:
             activity.clear()
-            self.query_one("#stream-view", StreamView).clear()
-            # Restore the chat log in case the turn ended without a DONE (e.g.
-            # an error path) while the stream view had taken the middle region.
-            self.query_one("#chat-log", ChatLog).display = True
             # Collapse the plan panel so the finished report gets the full
             # screen; its data is kept and the next turn re-shows it.
             self.query_one("#plan-panel", PlanPanel).collapse()
@@ -269,12 +262,6 @@ class SearchClawApp(App):
             text = data.get("text", "")
             if text:
                 self._answer_buf.append(text)
-                sv = self.query_one("#stream-view", StreamView)
-                if not sv.display:
-                    # Streaming begins: give the stream view the middle region
-                    # by hiding the chat log behind it.
-                    self.query_one("#chat-log", ChatLog).display = False
-                sv.append(text)
                 activity.set_status("composing answer…")
 
         elif et == EventType.REASONING_DELTA:
@@ -334,11 +321,6 @@ class SearchClawApp(App):
     def _flush_answer(self) -> None:
         text = "".join(self._answer_buf).strip()
         self._answer_buf.clear()
-        # The live stream view served its purpose; clear it and restore the
-        # chat log so the final, fully rendered Markdown (below) is the single
-        # durable copy.
-        self.query_one("#stream-view", StreamView).clear()
-        self.query_one("#chat-log", ChatLog).display = True
         if text:
             self._log_markdown(text)
 
@@ -419,7 +401,8 @@ class SearchClawApp(App):
                 "  /load      resume a past session: /load <n> (after /sessions)\n"
                 "  /verbose   toggle reasoning output\n"
                 "  /exit      quit\n"
-                "@path grants local search for a dir/file (e.g. @~/docs what does X say)",
+                "@path grants local search for a dir/file (e.g. @~/docs what does X say)\n"
+                "Drag to select text, then Ctrl+Y to copy the selection.",
                 style="grey62",
             ))
         elif name == "/clear":
@@ -481,6 +464,23 @@ class SearchClawApp(App):
             self._log(Text(f"Copied last answer ({len(self.sess.last_answer):,} chars) to clipboard.", style="grey50"))
         else:
             self._log(Text("No clipboard tool found (need xclip/xsel/wl-clipboard or pbcopy).", style="grey50"))
+
+    def action_copy_selection(self) -> None:
+        """Copy the current drag-selection to the system clipboard (Ctrl+Y).
+
+        Textual's mouse drag-selection highlights text but binds no copy key,
+        so we wire one up. Falls back through OSC52 (Textual) and a local
+        clipboard command so it works over SSH and locally.
+        """
+        text = self.screen.get_selected_text()
+        if not text:
+            self._log(Text("Nothing selected. Drag over text first, then Ctrl+Y.", style="grey50"))
+            return
+        # Textual's OSC52 path works over SSH; the local command path covers
+        # terminals that strip OSC52. Try both.
+        self.copy_to_clipboard(text)
+        _copy_to_clipboard(text)
+        self._log(Text(f"Copied selection ({len(text):,} chars).", style="grey50"))
 
     def _show_sessions(self) -> None:
         try:

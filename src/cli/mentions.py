@@ -57,10 +57,13 @@ def parse_mentions(text: str) -> tuple[str, list[str], list[str], list[str]]:
         else:
             _add(new_roots, str(p.parent))
             _add(focus_files, str(p))
-        return ""
+        # Keep the path text (without the @) in the query so the sentence
+        # still reads naturally, e.g. "check the papers in ~/papers" rather
+        # than leaving a blank gap where the mention was.
+        return raw
 
     cleaned = _MENTION_RE.sub(_replace, text)
-    # Collapse the whitespace left where mentions were removed.
+    # Collapse only the gaps left by *removed* (invalid) mentions.
     cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
     return cleaned, new_roots, focus_files, warnings
 
