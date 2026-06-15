@@ -79,6 +79,59 @@ class SlashSuggester(Suggester):
         return None
 
 
+class HistoryInput(Input):
+    """Input with shell-style Up/Down recall of previously submitted text.
+
+    History is per-session and in-memory. Up walks toward older entries,
+    Down toward newer; stepping past the newest restores the draft the user
+    was typing before they started browsing.
+    """
+
+    BINDINGS = [
+        Binding("up", "history_prev", show=False),
+        Binding("down", "history_next", show=False),
+    ]
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._history: list[str] = []
+        # Index into _history while browsing; len(_history) means "at the
+        # live draft" (not browsing). _draft holds that unsubmitted text.
+        self._hist_idx = 0
+        self._draft = ""
+
+    def add_history(self, text: str) -> None:
+        text = text.strip()
+        if text and (not self._history or self._history[-1] != text):
+            self._history.append(text)
+        # Any submission resets browsing to the live (empty) draft.
+        self._hist_idx = len(self._history)
+        self._draft = ""
+
+    def action_history_prev(self) -> None:
+        if not self._history:
+            return
+        # Entering history from the live draft: stash what's typed now.
+        if self._hist_idx == len(self._history):
+            self._draft = self.value
+        if self._hist_idx > 0:
+            self._hist_idx -= 1
+            self._set_value(self._history[self._hist_idx])
+
+    def action_history_next(self) -> None:
+        if self._hist_idx >= len(self._history):
+            return
+        self._hist_idx += 1
+        if self._hist_idx == len(self._history):
+            self._set_value(self._draft)
+        else:
+            self._set_value(self._history[self._hist_idx])
+
+    def _set_value(self, value: str) -> None:
+        self.value = value
+        self.cursor_position = len(value)
+
+
 def _summarize_args(tool_input: dict[str, Any]) -> str:
     if not tool_input:
         return ""
@@ -126,7 +179,7 @@ class SearchClawApp(App):
         yield WelcomeBanner(id="welcome")
         yield ChatLog(id="chat-log")
         yield ActivityPanel(id="activity-panel")
-        yield Input(
+        yield HistoryInput(
             placeholder="Ask a research question…  (@path for local files, /help)",
             id="prompt-input",
             suggester=SlashSuggester(),
@@ -157,6 +210,10 @@ class SearchClawApp(App):
         event.input.clear()
         if not text:
             return
+
+        # Record every non-empty submission for Up/Down recall.
+        if isinstance(event.input, HistoryInput):
+            event.input.add_history(text)
 
         # If the agent is waiting on a question, this input answers it.
         if self._answer_future is not None and not self._answer_future.done():
@@ -420,6 +477,7 @@ class SearchClawApp(App):
                 "  /verbose   toggle reasoning output\n"
                 "  /exit      quit\n"
                 "@path grants local search for a dir/file (e.g. @~/docs what does X say)\n"
+                "Up/Down recall previous inputs.\n"
                 "Copying text:\n"
                 "  - Drag to select, then Ctrl+Y to copy the selection\n"
                 "  - /copy copies the full last answer\n"
