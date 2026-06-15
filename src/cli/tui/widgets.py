@@ -192,6 +192,7 @@ class ActivityPanel(Static):
         """Show the panel at the start of a turn."""
         self._lines.clear()
         self._status = "working…"
+        self.border_title = "Activity"
         self.display = True
         self.refresh(layout=True)
 

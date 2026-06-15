@@ -57,6 +57,9 @@ Screen {
     max-height: 8;
     padding: 0 1;
     color: $text-muted;
+    border-top: round #3a3a3a;
+    border-title-color: #5fd7ff;
+    border-title-align: left;
     display: none;
 }
 
