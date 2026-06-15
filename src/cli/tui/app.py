@@ -402,26 +402,11 @@ class SearchClawApp(App):
             self._log_markdown(text)
 
     def _render_done(self, data: dict) -> None:
+        # The model's answer already ends with its own "Sources" section
+        # (rendered by _flush_answer as clickable Markdown), matching the web
+        # UI. So we only show a compact stats line here — rendering the
+        # citation list again would duplicate the sources on screen.
         citations = data.get("citations", [])
-        if citations:
-            # Render Sources as one Markdown block so web links are clickable
-            # (Textual Markdown opens them via App.open_url). Local file paths
-            # stay as plain text — terminals can't reliably open file:// URLs.
-            lines = ["**Sources**", ""]
-            for i, c in enumerate(citations, 1):
-                title = c.get("title") or c.get("url", "")
-                url = c.get("url", "")
-                is_local = c.get("source_type") == "local" or url.startswith("file://")
-                safe_title = _md_escape(title)
-                if not url:
-                    lines.append(f"{i}. {safe_title}")
-                elif is_local:
-                    shown = url[len("file://"):]
-                    lines.append(f"{i}. {safe_title}  \n   `{shown}`")
-                else:
-                    safe_url = url.replace(" ", "%20").replace(")", "%29")
-                    lines.append(f"{i}. [{safe_title}]({safe_url})")
-            self._log_markdown("\n".join(lines))
         turns = data.get("turn_count", 0)
         n = len(citations)
         self._log(Text(f"{turns} turns · {n} source{'s' if n != 1 else ''}", style="grey62"))
@@ -683,11 +668,6 @@ class SearchClawApp(App):
         # Alt-screen clears on exit; echo the last answer so the user keeps it.
         if self.sess.last_answer:
             print("\n" + self.sess.last_answer + "\n")
-
-
-def _md_escape(text: str) -> str:
-    """Escape characters that would break a Markdown link label."""
-    return text.replace("[", "\\[").replace("]", "\\]")
 
 
 def _copy_to_clipboard(text: str) -> bool:
