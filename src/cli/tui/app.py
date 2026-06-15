@@ -189,7 +189,9 @@ class SearchClawApp(App):
         self.query_one("#plan-panel", PlanPanel).display = False
         self.query_one("#activity-panel", ActivityPanel).display = False
         cfg = self.sess.runtime.llm_client.config
-        self.query_one("#welcome", WelcomeBanner).set_model(cfg.default_model)
+        self.query_one("#welcome", WelcomeBanner).set_model(
+            cfg.default_model, cfg.reasoning_effort or "off"
+        )
         self._welcome_shown = True
         self.query_one("#prompt-input", Input).focus()
 

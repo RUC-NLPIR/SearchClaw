@@ -75,9 +75,11 @@ class WelcomeBanner(Static):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._model = ""
+        self._effort = ""
 
-    def set_model(self, model: str) -> None:
+    def set_model(self, model: str, effort: str = "") -> None:
         self._model = model
+        self._effort = effort
         self.refresh(layout=True)
 
     def render(self) -> Text:
@@ -86,7 +88,11 @@ class WelcomeBanner(Static):
         out.append_text(_gradient_logo() if wide else _small_logo())
         out.append("\n")
         out.append("◆ web research agent\n", style="dim italic")
-        out.append(f"model {self._model}   ·   /help for commands   ·   Ctrl+D to quit", style="grey50")
+        effort = self._effort or "off"
+        out.append(
+            f"model {self._model}   ·   effort {effort}   ·   /help for commands   ·   Ctrl+D to quit",
+            style="grey50",
+        )
         return out
 
 
