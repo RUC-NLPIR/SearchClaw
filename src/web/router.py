@@ -296,7 +296,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="SearchClaw",
         description="A web research agent powered by LLMs",
-        version="0.2.0",
+        version="0.4.0",
         lifespan=lifespan,
     )
 
