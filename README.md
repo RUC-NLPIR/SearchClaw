@@ -99,6 +99,8 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 Besides the web UI, SearchClaw ships an interactive terminal client built on [Textual](https://textual.textualize.io/). It drives the same agentic research core as the server — same tools, hooks, planning, and memory — but runs entirely in your terminal, with one extra capability the web UI does not have: **local file search**.
 
+For a full walkthrough with screenshots, see the [CLI guide](https://daod.github.io/project/searchclaw).
+
 ### Launch
 
 Installing the package (`pip install -e .`) registers a `searchclaw` console command:
