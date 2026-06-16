@@ -18,10 +18,9 @@ For a detailed discussion of the system design, see the [Technical Report (PDF)]
 
 ## News
 
-- **2026-06-16 — [v0.4](https://github.com/RUC-NLPIR/SearchClaw/releases/tag/v0.4)**: Interactive CLI/TUI client with local file search via `@path`, DOCX export, and live-streaming answers. See the [CLI guide](https://daod.github.io/project/searchclaw).
-- **2026-06-11 — [v0.3](https://github.com/RUC-NLPIR/SearchClaw/releases/tag/v0.3)**: On-demand local skills with `SKILL.md` discovery, `use_skill`, and `run_skill_script`.
-- **2026-04-26 — [v0.2](https://github.com/RUC-NLPIR/SearchClaw/releases/tag/v0.2)**: Second release.
-- **2026-04-10 — [v0.1](https://github.com/RUC-NLPIR/SearchClaw/releases/tag/v0.1)**: First public release.
+- **2026-06-16**: We release a new version of [v0.4](https://github.com/RUC-NLPIR/SearchClaw/releases/tag/v0.4)! Interactive CLI/TUI client with local file search via `@path`, DOCX export, and live-streaming answers. See the [CLI guide](https://daod.github.io/project/searchclaw).
+- **2026-06-11**: We add a `skill` component for SearchClaw. See more details at [v0.3](https://github.com/RUC-NLPIR/SearchClaw/releases/tag/v0.3).
+- **2026-04-10** First public release.
 
 https://github.com/user-attachments/assets/c9598751-da53-4e12-955d-870c9ff86b28
 
