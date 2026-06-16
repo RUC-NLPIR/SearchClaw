@@ -156,7 +156,7 @@ A directory mention grants the whole directory; a file mention grants its parent
 
 Access is sandboxed to the granted roots: path traversal and symlink escapes are blocked, and noise directories (`.git`, `node_modules`, …), secret files (`.env`, SSH keys, …), and oversized/binary files are skipped automatically. Use `/roots` to see what is currently granted.
 
-You can mention paths containing spaces by quoting them (`@"~/my docs"`), and non-ASCII paths — including Chinese, Japanese, and Korean — are supported even when the path runs directly into the following text with no space (e.g. `@~/论文目录里有哪些文章`).
+You can mention paths containing spaces by quoting them (`@"~/my docs"`), and non-ASCII paths — including Chinese, Japanese, and Korean — are supported even when the path runs directly into the following text with no space.
 
 ## Configuration
 
