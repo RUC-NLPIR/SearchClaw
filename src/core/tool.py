@@ -312,6 +312,17 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
     except Exception:
         logger.warning("WeChat search tool failed to initialize", exc_info=True)
 
+    try:
+        from src.tools.exa_search import ExaSearchTool
+        registry.register(ExaSearchTool(
+            default_results=cfg.get("exa_search_default_results", 10),
+            max_results=cfg.get("exa_search_max_results", 20),
+            max_result_size_chars=cfg.get("max_result_size_chars", 15000),
+            http_timeout=cfg.get("http_timeout", 30),
+        ))
+    except ImportError:
+        logger.info("Exa search tool not available (missing dependencies)")
+
     # --- Browser integration (optional) ---
     # Wire up BrowserManager to web_search and web_fetch tools when enabled.
     # The browser is NOT a separate tool — it's a backend fallback within
