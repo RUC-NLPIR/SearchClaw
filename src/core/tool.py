@@ -243,6 +243,7 @@ def build_default_registry(config: dict | None = None) -> ToolRegistry:
 
     registry = ToolRegistry()
     registry.register(WebSearchTool(
+        provider=cfg.get("web_search_provider", "serper"),
         default_results=cfg.get("web_search_default_results", 10),
         max_results=cfg.get("web_search_max_results", 20),
         max_result_size_chars=cfg.get("max_result_size_chars", 15000),

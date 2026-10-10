@@ -101,6 +101,30 @@ python -m src.main
 
 Open [http://localhost:8000](http://localhost:8000) in your browser.
 
+### Optional: free Parallel web search
+
+Install the MCP client dependency:
+
+```bash
+pip install -e '.[parallel]'
+```
+
+Set `tools.web_search_provider: parallel` in `config/settings.yaml` for the web
+server, or in `~/.searchclaw/config.yaml` for the CLI. Restart the application
+after changing the setting.
+
+The existing `search_web` tool then uses
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) over
+Streamable HTTP at `https://search.parallel.ai/mcp`. Search runs in Fast mode,
+with no Parallel account or API key required. Anonymous access is rate limited;
+`num_results` caps the returned results locally, and the server may return fewer.
+Page fetching continues to use SearchClaw's existing `fetch_url` tool. Your LLM
+configuration is still required.
+
+The default `serper` setting keeps the Serper, browser and DuckDuckGo fallback
+chain. Selecting `parallel` uses only Parallel for web search and reports service
+errors without switching providers.
+
 ## Command-Line Interface
 
 Besides the web UI, SearchClaw ships an interactive terminal client built on [Textual](https://textual.textualize.io/). It drives the same agentic research core as the server — same tools, hooks, planning, and memory — but runs entirely in your terminal, with one extra capability the web UI does not have: **local file search**.

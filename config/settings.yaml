@@ -83,6 +83,9 @@ limits:
   rate_limit_per_domain: 50
 
 tools:
+  # Opt-in keyless Parallel Search MCP: pip install -e '.[parallel]'
+  # serper preserves the existing Serper -> browser -> DuckDuckGo fallback.
+  web_search_provider: "serper"  # serper | parallel
   # Directory for caching oversized tool results (truncated pages, etc.)
   # Defaults to ./cache relative to the project root
   cache_dir: "./cache"

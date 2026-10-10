@@ -54,6 +54,7 @@ _default_max_fetch = 20
 _compact_threshold_tokens = 80000
 _rate_limit_per_domain = 10
 # Tools config
+_web_search_provider = "serper"
 _web_search_default_results = 10
 _web_search_max_results = 20
 _academic_search_default_results = 5
@@ -110,6 +111,7 @@ try:
         _rate_limit_per_domain = int(_limits.get("rate_limit_per_domain", 10))
         # Tools config
         _tools_cfg = _settings.get("tools", {})
+        _web_search_provider = _tools_cfg.get("web_search_provider", "serper")
         _web_search_default_results = int(_tools_cfg.get("web_search_default_results", 10))
         _web_search_max_results = int(_tools_cfg.get("web_search_max_results", 20))
         _academic_search_default_results = int(_tools_cfg.get("academic_search_default_results", 5))
@@ -169,6 +171,7 @@ logger.info(
 
 # --- Shared resources (initialized once) ---
 tool_registry = build_default_registry(config={
+    "web_search_provider": _web_search_provider,
     "web_search_default_results": _web_search_default_results,
     "web_search_max_results": _web_search_max_results,
     "academic_search_default_results": _academic_search_default_results,

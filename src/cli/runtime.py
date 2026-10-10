@@ -108,6 +108,7 @@ def build_runtime(settings: dict[str, Any]) -> Runtime:
     browser_use_for_fetch = bool(browser_cfg.get("use_for_fetch", True))
 
     tool_registry = build_default_registry(config={
+        "web_search_provider": tools_cfg.get("web_search_provider", "serper"),
         "web_search_default_results": int(tools_cfg.get("web_search_default_results", 10)),
         "web_search_max_results": int(tools_cfg.get("web_search_max_results", 20)),
         "academic_search_default_results": int(tools_cfg.get("academic_search_default_results", 5)),

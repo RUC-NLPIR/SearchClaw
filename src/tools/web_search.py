@@ -52,11 +52,20 @@ class WebSearchTool(Tool):
         max_results: int = 20,
         max_result_size_chars: int = 15000,
         http_timeout: int = 30,
+        provider: str = "serper",
     ):
+        if provider not in ("serper", "parallel"):
+            raise ValueError("web_search_provider must be 'serper' or 'parallel'")
+        self.provider = provider
+        self.http_timeout = float(http_timeout)
         self.default_results = default_results
         self.max_results = max_results
         self.max_result_size_chars = max_result_size_chars
-        self._client = httpx.AsyncClient(timeout=float(http_timeout))
+        headers = (
+            {"User-Agent": "SearchClaw/0.4 (+https://github.com/RUC-NLPIR/SearchClaw)"}
+            if provider == "parallel" else None
+        )
+        self._client = httpx.AsyncClient(timeout=self.http_timeout, headers=headers)
         # Browser integration (set externally by build_default_registry
         # when browser.enabled and browser.use_for_search are true)
         self._browser_manager = None
@@ -83,8 +92,27 @@ class WebSearchTool(Tool):
         query = args["query"]
         num_results = min(args.get("num_results", self.default_results), self.max_results)
 
-        # Try providers in order
-        results = await self._search_serper(query, num_results)
+        if self.provider == "parallel":
+            try:
+                from src.utils.parallel_search import search_parallel
+            except ImportError:
+                return ToolResult(
+                    data="Parallel search requires: pip install -e '.[parallel]'",
+                    is_error=True,
+                )
+            try:
+                results = await search_parallel(
+                    self._client, query, num_results, context.session_id,
+                    self.http_timeout,
+                )
+            except Exception:
+                logger.warning("Parallel MCP search failed", exc_info=True)
+                return ToolResult(
+                    data="Parallel search is temporarily unavailable. Please try again later.",
+                    is_error=True,
+                )
+        else:
+            results = await self._search_serper(query, num_results)
 
         if not results:
             return ToolResult(
